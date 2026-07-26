@@ -1,0 +1,38 @@
+# ============================================================================
+# OPTIONAL — expose the app on a friendly hostname (with HTTPS).
+# Apply only if your cluster has an ingress controller (nginx, Traefik, etc.).
+# Without this, reach the app by port-forwarding or a LoadBalancer Service.
+#
+# EDIT BEFORE APPLYING:
+#   - host:  set to the name your team will use, e.g. nds.corp.example.com
+#   - ingressClassName: match your controller (often "nginx")
+#   - TLS:   point to a Secret holding your certificate, or remove the tls:
+#            block if your controller handles certs automatically (e.g. via
+#            cert-manager annotations).
+# ============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nds-api
+  namespace: nds
+  annotations:
+    # Example cert-manager auto-TLS (uncomment if you use it):
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"   # room for logo uploads
+spec:
+  ingressClassName: nginx                # <-- match your ingress controller
+  tls:
+    - hosts:
+        - nds.corp.example.com           # <-- your hostname
+      secretName: nds-tls                # <-- Secret with the cert (or via cert-manager)
+  rules:
+    - host: nds.corp.example.com         # <-- your hostname
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nds-api
+                port:
+                  number: 80

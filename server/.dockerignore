@@ -1,0 +1,8 @@
+nds.db
+nds.db-wal
+nds.db-shm
+*.log
+__pycache__/
+*.pyc
+.git
+.DS_Store

@@ -1,0 +1,25 @@
+# Network Device Standards — run the shared server with one command.
+#
+# From the repository root:
+#     docker compose up -d --build
+# then open  http://THIS-MACHINE:8000
+#
+# Your data persists in the named volume "nds-data" (survives restarts/rebuilds).
+# To edit the app without rebuilding, the live-mount line below serves app/index.html
+# straight from disk — just hard-refresh the browser after changing it.
+
+services:
+  nds:
+    build:
+      context: .                 # repo root, so the image can see app/ and server/
+      dockerfile: server/Dockerfile
+    container_name: nds-api
+    ports:
+      - "8000:8000"              # host : container
+    volumes:
+      - nds-data:/data                       # keeps nds.db across restarts/updates
+      - ./app/index.html:/app/app/index.html # live-edit the app: change on disk, hard-refresh browser
+    restart: unless-stopped
+
+volumes:
+  nds-data:

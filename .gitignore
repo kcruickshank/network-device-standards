@@ -1,0 +1,30 @@
+# Database (never commit real data)
+*.db
+*.db-wal
+*.db-shm
+nds.db*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Node (only if you ever add a build step)
+node_modules/
+
+# Local backups / exports
+*-backup.*
+backups/

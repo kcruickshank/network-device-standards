@@ -1,0 +1,110 @@
+# ============================================================================
+# Network Device Standards — Kubernetes manifests (single replica + SQLite)
+# ============================================================================
+# Apply everything in this folder with:   kubectl apply -f k8s/
+#
+# IMPORTANT — this runs ONE replica on purpose.
+#   The catalogue is stored in a single SQLite file on the PersistentVolume
+#   below. Running more than one replica would let pods fight over that file
+#   and corrupt data. Keep replicas at 1. (For multi-replica high availability
+#   you would switch the backend to PostgreSQL — see the README.)
+#
+# BEFORE YOU APPLY:
+#   1. Build and push the image to a registry your cluster can pull from:
+#         docker build -f server/Dockerfile -t YOUR_REGISTRY/nds-api:1.0 .   # from repo root
+#         docker push YOUR_REGISTRY/nds-api:1.0
+#   2. Replace  YOUR_REGISTRY/nds-api:1.0  in the Deployment below with that
+#      exact image reference.
+#   3. If your cluster needs a specific StorageClass, set it in the PVC.
+# ============================================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nds
+---
+# Holds nds.db so the data survives pod restarts, image updates and reschedules.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nds-data
+  namespace: nds
+spec:
+  accessModes:
+    - ReadWriteOnce          # one pod writes it; matches our single replica
+  resources:
+    requests:
+      storage: 1Gi           # plenty for a device catalogue; raise if needed
+  # storageClassName: "standard"   # uncomment & set if your cluster needs it
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nds-api
+  namespace: nds
+  labels:
+    app: nds-api
+spec:
+  replicas: 1                # DO NOT increase with the SQLite backend
+  strategy:
+    type: Recreate           # ensures the old pod releases the volume before
+                             # the new one starts (avoids two pods, one file)
+  selector:
+    matchLabels:
+      app: nds-api
+  template:
+    metadata:
+      labels:
+        app: nds-api
+    spec:
+      containers:
+        - name: nds-api
+          image: YOUR_REGISTRY/nds-api:1.0   # <-- replace with your pushed image
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: NDS_DB_PATH
+              value: /data/nds.db            # server.py reads this
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:                    # "is it ready to receive traffic?"
+            httpGet:
+              path: /api/v1/ping
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:                     # "is it still alive? restart if not"
+            httpGet:
+              path: /api/v1/ping
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "96Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: nds-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nds-api
+  namespace: nds
+  labels:
+    app: nds-api
+spec:
+  type: ClusterIP            # internal address; expose via the Ingress file
+  selector:
+    app: nds-api
+  ports:
+    - name: http
+      port: 80               # service port
+      targetPort: 8000       # container port
