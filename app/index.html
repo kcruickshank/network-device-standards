@@ -1713,17 +1713,17 @@ $("cat-head-save").addEventListener("click",async ()=>{
 function fillFilterOptions(){
   const ft=$("f-type"), fu=$("f-uc");
   const keepT=ft.value, keepU=fu.value;
-  ft.innerHTML = '<option value="">All types</option>' + allTypes().map(t=>`<option>${esc(t)}</option>`).join("");
+  ft.innerHTML = '<option value="">All types</option>' + allTypes().slice().sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"})).map(t=>`<option>${esc(t)}</option>`).join("");
   ft.value=keepT;
   // Use-case options cascade from the selected device type:
   // only use cases tagged on at least one device of that type are offered.
   let ucOptions;
   if (ft.value) {
-    ucOptions = [...new Set(state.devices.filter(d=>d.type===ft.value).flatMap(d=>d.useCases||[]))]
-      .sort((a,b)=>a.localeCompare(b));
+    ucOptions = [...new Set(state.devices.filter(d=>d.type===ft.value).flatMap(d=>d.useCases||[]))];
   } else {
     ucOptions = allUseCases();
   }
+  ucOptions.sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
   fu.innerHTML = '<option value="">All use cases</option>' + ucOptions.map(u=>`<option>${esc(u)}</option>`).join("");
   fu.value = ucOptions.includes(keepU) ? keepU : "";
 }
@@ -2047,6 +2047,7 @@ $("d-delete").addEventListener("click",async ()=>{
 function renderAccCatOptions(sel){
   const cats = allAccCategories();
   if (sel && !cats.includes(sel)) cats.push(sel);
+  cats.sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
   $("a-cat").innerHTML = cats.map(c=>`<option ${c===sel?"selected":""}>${esc(c)}</option>`).join("");
 }
 function renderAccDeviceChecks(selectedIds){
@@ -2163,6 +2164,7 @@ function deviceLinks(devId){
 function renderLinkCatOptions(sel){
   const cats = allLinkCategories();
   if (sel && !cats.includes(sel)) cats.push(sel);
+  cats.sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
   $("l-cat").innerHTML = cats.map(c=>`<option ${c===sel?"selected":""}>${esc(c)}</option>`).join("");
 }
 function renderLinkDeviceChecks(selectedIds){
@@ -2744,8 +2746,8 @@ async function deleteUseCase(u){
 /* ---------------- Unit Costs review page ---------------- */
 function renderCostFilters(){
   const dsel=$("cst-dtype"), asel=$("cst-atype");
-  const dtypes=[...new Set(state.devices.map(d=>d.type||"Untyped"))].sort();
-  const atypes=[...new Set(state.accessories.map(a=>a.category||"Uncategorised"))].sort();
+  const dtypes=[...new Set(state.devices.map(d=>d.type||"Untyped"))].sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
+  const atypes=[...new Set(state.accessories.map(a=>a.category||"Uncategorised"))].sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
   const dCur=dsel.value, aCur=asel.value;
   dsel.innerHTML='<option value="">All device types</option>'+dtypes.map(t=>`<option ${t===dCur?"selected":""}>${esc(t)}</option>`).join("");
   asel.innerHTML='<option value="">All accessory types</option>'+atypes.map(t=>`<option ${t===aCur?"selected":""}>${esc(t)}</option>`).join("");
@@ -2944,7 +2946,7 @@ function openBom(id){
 }
 function siteAddr(id){ const s=state.sites.find(x=>x.id===id); return s ? (s.address||"").trim() : ""; }
 function fillSiteSelect(sel, chosen){
-  const opts = state.sites.slice().sort((a,b)=>(a.name||"").localeCompare(b.name||""))
+  const opts = state.sites.slice().sort((a,b)=>(a.name||"").localeCompare(b.name||"", undefined, {sensitivity:"base"}))
     .map(s=>{ const label = (s.name||"(unnamed site)") + (s.ref?` — ${s.ref}`:""); return `<option value="${esc(s.id)}" ${s.id===chosen?"selected":""}>${esc(label)}</option>`; }).join("");
   sel.innerHTML = '<option value="">— Select site —</option>' + opts;
   sel.value = chosen || "";
@@ -3192,8 +3194,8 @@ function openAddItemModal(){
   $("bom-stage-type").style.display="none";
   $("bom-stage-device").style.display=""; $("bom-stage-acc").style.display="none";
   $("bom-modal-h").textContent="Add device to BOM";
-  $("bm-type").innerHTML='<option value="">All types</option>'+allTypes().map(t=>`<option>${esc(t)}</option>`).join("");
-  $("bm-uc").innerHTML='<option value="">All use cases</option>'+allUseCases().map(u=>`<option>${esc(u)}</option>`).join("");
+  $("bm-type").innerHTML='<option value="">All types</option>'+allTypes().slice().sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"})).map(t=>`<option>${esc(t)}</option>`).join("");
+  $("bm-uc").innerHTML='<option value="">All use cases</option>'+allUseCases().slice().sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"})).map(u=>`<option>${esc(u)}</option>`).join("");
   $("bm-type").value=""; $("bm-uc").value=""; $("bm-q").value=""; $("bm-qty").value="1";
   $("bm-next").disabled=true;
   renderPickList();
@@ -3204,7 +3206,7 @@ function openAddAccessoryModal(){
   bmMode="accessory"; bmSelectedDevice=null;
   $("bom-stage-type").style.display=""; $("bom-stage-device").style.display="none"; $("bom-stage-acc").style.display="none";
   $("bom-modal-h").textContent="Add accessory to BOM";
-  const types=[...new Set(state.devices.map(d=>d.type).filter(Boolean))].sort();
+  const types=[...new Set(state.devices.map(d=>d.type).filter(Boolean))].sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
   $("bm-acctype").innerHTML = '<option value="">All types</option>' + types.map(t=>`<option>${esc(t)}</option>`).join("");
   $("bm-acctype").value="";
   renderAccModelOptions();
@@ -3212,7 +3214,7 @@ function openAddAccessoryModal(){
 }
 function renderAccModelOptions(){
   const t=$("bm-acctype").value;
-  const models=state.devices.filter(d=>!t || d.type===t).slice().sort((a,b)=>a.model.localeCompare(b.model));
+  const models=state.devices.filter(d=>!t || d.type===t).slice().sort((a,b)=>a.model.localeCompare(b.model, undefined, {sensitivity:"base"}));
   $("bm-accmodel").innerHTML = '<option value="">— Select a model —</option>' +
     models.map(d=>`<option value="${esc(d.id)}">${esc(d.model)}${t?"":` · ${esc(d.type||"")}`}</option>`).join("");
   $("bm-accmodel").value="";
@@ -3449,8 +3451,8 @@ function renderLog(){
   const rows = state.changelog.slice().sort((a,b)=>(b.ts||"").localeCompare(a.ts||""));
   const entSel=$("cl-entity"), actSel=$("cl-action");
   const keepE=entSel.value, keepA=actSel.value;
-  entSel.innerHTML = '<option value="">All items</option>' + [...new Set(rows.map(e=>e.entity))].sort().map(x=>`<option>${esc(x)}</option>`).join("");
-  actSel.innerHTML = '<option value="">All actions</option>' + [...new Set(rows.map(e=>e.action))].sort().map(x=>`<option>${esc(x)}</option>`).join("");
+  entSel.innerHTML = '<option value="">All items</option>' + [...new Set(rows.map(e=>e.entity))].sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"})).map(x=>`<option>${esc(x)}</option>`).join("");
+  actSel.innerHTML = '<option value="">All actions</option>' + [...new Set(rows.map(e=>e.action))].sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"})).map(x=>`<option>${esc(x)}</option>`).join("");
   entSel.value=keepE; actSel.value=keepA;
   const q=$("cl-q").value.trim().toLowerCase();
   const list = rows.filter(e=>{
