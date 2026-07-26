@@ -131,6 +131,14 @@
   }
   .uc.hit{border-color:var(--amber);background:#FCF3E3}
   .uc.ft{background:#EDF6FB;border-color:#BFD9E9;color:var(--accent-deep)}
+  .uc.pref{border-color:var(--amber);background:#FCF3E3;font-weight:600}
+  .uc.pref::before{content:"★ ";color:var(--amber);font-weight:700}
+  /* preferred-device markers */
+  .pref-badge{font-size:16px;line-height:1;color:var(--amber);margin-left:8px;flex-shrink:0;text-shadow:0 1px 2px rgba(8,16,26,.5)}
+  .crow .cpref{color:var(--amber);font-size:14px;flex-shrink:0}
+  .pref-star{margin-left:auto;background:none;border:0;cursor:pointer;font-size:15px;line-height:1;color:var(--line);padding:0 2px;flex-shrink:0}
+  .pref-star.on{color:var(--amber)}
+  .pref-star:hover{color:var(--amber);opacity:.85}
   .lic{font-family:var(--mono);font-size:12px;color:var(--accent-deep)}
   .cost{font-family:var(--mono);font-size:12.5px;color:#5C9A6B}
   .cost .csub{color:#7FB08C;font-size:11px}
@@ -1508,7 +1516,7 @@ function activeCurrency(){ return (state.meta && state.meta.currency) || "EUR"; 
 function curSymbol(){ return (CURRENCIES[activeCurrency()]||CURRENCIES.EUR).symbol; }
 function money(n){ return activeCurrency() + " " + curSymbol() + (Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function eur(n){ return money(n); }   // alias: all existing callers now follow the active currency
-const FIELD_LABELS = { model:"model", type:"device type", description:"description", notes:"notes", useCases:"use cases",
+const FIELD_LABELS = { model:"model", type:"device type", description:"description", notes:"notes", useCases:"use cases", preferredUseCases:"preferred use cases",
   features:"features", license:"license", ports:"port count", cost:"unit cost", costDate:"price date", version:"version", file:"image file", updated:"updated date",
   name:"name", partNumber:"part number", category:"category", deviceIds:"associated devices", title:"title", url:"URL" };
 function diffFields(prev, next, fields){
@@ -1756,7 +1764,10 @@ function renderCatalog(){
     grid.className = "collapsed-list";
     grid.innerHTML = list.map(d=>{
       const col = typeColor(d.type);
-      const ucs = (d.useCases||[]).map(x=>`<span class="uc ${u&&x===u?"hit":""}">${esc(x)}</span>`).join("") || '<span class="none">No use cases</span>';
+      const prefUC = d.preferredUseCases||[];
+      const ucs = (d.useCases||[]).map(x=>`<span class="uc ${u&&x===u?"hit":""} ${prefUC.includes(x)?"pref":""}">${esc(x)}</span>`).join("") || '<span class="none">No use cases</span>';
+      const showStar = u ? prefUC.includes(u) : prefUC.length>0;
+      const rowStar = showStar ? `<span class="cpref" title="${u?`Preferred device for &ldquo;${esc(u)}&rdquo;`:`Preferred for: ${esc(prefUC.join(", "))}`}">★</span>` : "";
       const ftList = (d.features||[]);
       const ftGroup = ftList.length
         ? `<span class="cgroup cucs"><span class="sec-lbl">Features</span><span class="uc-row">${ftList.map(x=>`<span class="uc ft">${esc(x)}</span>`).join("")}</span></span>`
@@ -1773,7 +1784,7 @@ function renderCatalog(){
         : "";
       return `<div class="crow" style="border-left-color:${col}">
         <span class="ctype" style="background:${col}">${esc(d.type||"Untyped")}</span>
-        <span class="cmodel">${esc(d.model)}</span>
+        ${rowStar}<span class="cmodel">${esc(d.model)}</span>
         <span class="cdesc">${esc(d.description||"")}</span>
         <span class="cgroup cucs"><span class="sec-lbl">Use Cases</span><span class="uc-row">${ucs}</span></span>
         ${ftGroup}
@@ -1792,7 +1803,10 @@ function renderCatalog(){
     const realPorts = Number(d.ports)>0 ? Number(d.ports) : 0;   // from the Port count field only
     const ports = Array.from({length:7},()=>`<i style="background:${col}"></i>`).join(""); // fixed decorative dots, not tied to port count
     const pLabel = realPorts ? `<span class="pcount">${realPorts}P</span>` : "";
-    const ucs = (d.useCases||[]).map(x=>`<span class="uc ${u&&x===u?"hit":""}">${esc(x)}</span>`).join("") || '<span class="none">No use cases tagged</span>';
+    const prefUC = d.preferredUseCases||[];
+    const ucs = (d.useCases||[]).map(x=>`<span class="uc ${u&&x===u?"hit":""} ${prefUC.includes(x)?"pref":""}">${esc(x)}</span>`).join("") || '<span class="none">No use cases tagged</span>';
+    const showStar = u ? prefUC.includes(u) : prefUC.length>0;
+    const prefBadge = showStar ? `<span class="pref-badge" title="${u?`Preferred device for &ldquo;${esc(u)}&rdquo;`:`Preferred for: ${esc(prefUC.join(", "))}`}">★</span>` : "";
     const fts = (d.features||[]).map(x=>`<span class="uc ft">${esc(x)}</span>`).join("");
     const accs = deviceAccessories(d.id);
     let accHtml = '<div class="none">No accessories linked yet</div>';
@@ -1833,7 +1847,7 @@ function renderCatalog(){
         ).join("") + `</div>`;
     }
     return `<article class="card">
-      <div class="faceplate"><div class="ports" aria-hidden="true">${ports}</div>${pLabel}<span class="plate">${esc(d.model)}</span></div>
+      <div class="faceplate"><div class="ports" aria-hidden="true">${ports}</div>${pLabel}<span class="plate">${esc(d.model)}</span>${prefBadge}</div>
       <div class="card-body">
         <div class="card-top"><h3>${esc(d.model)}</h3><span class="typechip" style="background:${col}">${esc(d.type||"Untyped")}</span></div>
         ${d.description?`<div class="desc">${esc(d.description)}</div>`:""}
@@ -1899,10 +1913,37 @@ function toggleLifecycleFields(){
 $("d-lifecycle").addEventListener("change",toggleLifecycleFields);
 function toggleEosupDate(){ $("d-eosup-date-wrap").style.display = $("d-eosup").checked ? "inline-flex" : "none"; }
 $("d-eosup").addEventListener("change",toggleEosupDate);
-function renderUseCaseChecks(selected){
+function renderUseCaseChecks(selected, preferred){
+  selected = selected || [];
+  preferred = preferred || [];
   const wrap=$("d-usecases");
   const all=[...new Set([...allUseCases(), ...selected])].slice().sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
-  wrap.innerHTML = all.map(u=>`<label><input type="checkbox" value="${esc(u)}" ${selected.includes(u)?"checked":""}><span>${esc(u)}</span></label>`).join("");
+  wrap.innerHTML = all.map(u=>{
+    const on = selected.includes(u);
+    const pref = on && preferred.includes(u);
+    return `<label><input type="checkbox" value="${esc(u)}" ${on?"checked":""}><span>${esc(u)}</span>`+
+      `<button type="button" class="pref-star${pref?" on":""}" title="Mark this device as the preferred (vs alternative) choice for &ldquo;${esc(u)}&rdquo;" aria-pressed="${pref?"true":"false"}" ${on?"":"hidden"}>★</button></label>`;
+  }).join("");
+  wrap.querySelectorAll("label").forEach(lab=>{
+    const cb=lab.querySelector('input[type=checkbox]');
+    const star=lab.querySelector('.pref-star');
+    cb.addEventListener("change",()=>{
+      if(cb.checked){ star.hidden=false; }
+      else { star.hidden=true; star.classList.remove("on"); star.setAttribute("aria-pressed","false"); }
+    });
+    star.addEventListener("click",e=>{
+      e.preventDefault(); e.stopPropagation();
+      const nowOn=star.classList.toggle("on");
+      star.setAttribute("aria-pressed", nowOn?"true":"false");
+    });
+  });
+}
+// Preferred use cases currently ticked in the device form (only for checked use cases).
+function readPreferredUseCases(){
+  const checked=new Set([...$("d-usecases").querySelectorAll("input:checked")].map(i=>i.value));
+  return [...$("d-usecases").querySelectorAll(".pref-star.on")]
+    .map(b=>b.closest("label").querySelector("input").value)
+    .filter(v=>checked.has(v));
 }
 function renderFeatureChecks(selected){
   const wrap=$("d-features");
@@ -1947,7 +1988,7 @@ function editDevice(id){
   renderLifecycleUI(d.lifecycle, d.id, d.endOfSupport);
   renderLicenseChecks(deviceLicenses(d));
   renderGImageOptions(id);
-  renderUseCaseChecks(d.useCases||[]);
+  renderUseCaseChecks(d.useCases||[], d.preferredUseCases||[]);
   renderFeatureChecks(d.features||[]);
   $("d-delete").style.display="";
   switchView("device");
@@ -1956,12 +1997,13 @@ function editDevice(id){
 $("d-uc-add").addEventListener("click",async ()=>{
   const v=$("d-uc-new").value.trim(); if(!v) return;
   const checked=[...$("d-usecases").querySelectorAll("input:checked")].map(i=>i.value);
+  const preferred=readPreferredUseCases();
   if(!checked.includes(v)) checked.push(v);
   if(!state.meta.useCases.includes(v)){
     state.meta.useCases.push(v);
     try { await store.saveMeta(); await logChange("Added","Use case",v,""); } catch(e){ toast("Could not save use case: " + e.message); }
   }
-  renderUseCaseChecks(checked); $("d-uc-new").value="";
+  renderUseCaseChecks(checked, preferred); $("d-uc-new").value="";
 });
 $("d-ft-new").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); $("d-ft-add").click(); } });
 $("d-ft-add").addEventListener("click",async ()=>{
@@ -1984,6 +2026,7 @@ $("d-save").addEventListener("click",async ()=>{
   const portsValRaw=parseInt($("d-ports").value,10);
   if(!(Number.isFinite(portsValRaw) && portsValRaw>0)){ toast("A port count is required."); $("d-ports").focus(); return; }
   const useCases=[...$("d-usecases").querySelectorAll("input:checked")].map(i=>i.value);
+  const preferredUseCases=readPreferredUseCases();
   const features=[...$("d-features").querySelectorAll("input:checked")].map(i=>i.value);
   let d; const isNew = !state.editingDeviceId; let prev=null;
   if (state.editingDeviceId){ d=state.devices.find(x=>x.id===state.editingDeviceId); prev={...d, useCases:[...(d.useCases||[])], features:[...(d.features||[])]}; }
@@ -1993,7 +2036,7 @@ $("d-save").addEventListener("click",async ()=>{
   const lcStatus=$("d-lifecycle").value;
   const lifecycle = lcStatus ? { status:lcStatus, date:$("d-lc-date").value||undefined, replacementId:$("d-lc-repl").value||undefined } : undefined;
   const endOfSupport = $("d-eosup").checked ? { date:$("d-eosup-date").value||undefined } : undefined;
-  Object.assign(d,{ model, type:$("d-type").value, licenses, license:undefined, lifecycle, endOfSupport, description:desc, notes:$("d-notes").value.trim(), useCases, features,
+  Object.assign(d,{ model, type:$("d-type").value, licenses, license:undefined, lifecycle, endOfSupport, description:desc, notes:$("d-notes").value.trim(), useCases, preferredUseCases, features,
     ports: portsValRaw,
     cost: (Number.isFinite(costVal) && costVal>=0) ? costVal : undefined,
     costDate: $("d-cost-date").value || undefined });
@@ -2011,7 +2054,7 @@ $("d-save").addEventListener("click",async ()=>{
     }
     if (isNew) await logChange("Added","Device",model,(d.type||"") + (deviceLicenses(d).length?" · "+deviceLicenses(d).join(", "):"") + ((d.useCases||[]).length?" · "+(d.useCases||[]).join(", "):""));
     else {
-      const changed = diffFields(prev,d,["model","type","licenses","lifecycle","endOfSupport","ports","cost","costDate","description","notes","useCases","features"]);
+      const changed = diffFields(prev,d,["model","type","licenses","lifecycle","endOfSupport","ports","cost","costDate","description","notes","useCases","preferredUseCases","features"]);
       if (imgChanged) changed.push("golden image");
       await logChange("Edited","Device",model, changed.length ? "Changed: " + changed.join(", ") : "No field changes");
     }
