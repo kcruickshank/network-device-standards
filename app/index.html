@@ -1539,6 +1539,7 @@ function switchView(name){
   // reflect active state on the Actions dropdown when one of its items is current
   const drop=$("actions-drop");
   if(drop){ const inDrop=!!$("actions-menu").querySelector(`[data-view="${name}"]`); drop.classList.toggle("has-active", inDrop); drop.classList.remove("open"); $("actions-btn").setAttribute("aria-expanded","false"); }
+  if (name==="catalog") renderCatalog();
   if (name==="device" && !state.editingDeviceId) resetDeviceForm();
   if (name==="accessories") { if(!state.editingAccId){ const cur=$("a-cat").value; renderAccCatOptions(allAccCategories().includes(cur)?cur:""); } renderAccDeviceChecks(); renderAccTable(); }
   if (name==="links") { if(!state.editingLinkId){ const cur=$("l-cat").value; renderLinkCatOptions(allLinkCategories().includes(cur)?cur:""); } renderLinkDeviceChecks(state.editingLinkId ? (state.links.find(l=>l.id===state.editingLinkId)||{}).deviceIds : []); renderLinkTable(); }
