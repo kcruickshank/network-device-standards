@@ -1541,7 +1541,7 @@ function switchView(name){
   if(drop){ const inDrop=!!$("actions-menu").querySelector(`[data-view="${name}"]`); drop.classList.toggle("has-active", inDrop); drop.classList.remove("open"); $("actions-btn").setAttribute("aria-expanded","false"); }
   if (name==="device" && !state.editingDeviceId) resetDeviceForm();
   if (name==="accessories") { if(!state.editingAccId) renderAccCatOptions($("a-cat").value||ACC_CATEGORIES[0]); renderAccDeviceChecks(); renderAccTable(); }
-  if (name==="links") { renderLinkDeviceChecks(state.editingLinkId ? (state.links.find(l=>l.id===state.editingLinkId)||{}).deviceIds : []); renderLinkTable(); }
+  if (name==="links") { if(!state.editingLinkId){ const cur=$("l-cat").value; renderLinkCatOptions(allLinkCategories().includes(cur)?cur:""); } renderLinkDeviceChecks(state.editingLinkId ? (state.links.find(l=>l.id===state.editingLinkId)||{}).deviceIds : []); renderLinkTable(); }
   if (name==="features") renderFeatures();
   if (name==="licensing") renderLicenses();
   if (name==="images") { renderImageDeviceChecks(state.editingImgId ? (state.goldenImages.find(g=>g.id===state.editingImgId)||{}).deviceIds : []); renderImageTable(); }
