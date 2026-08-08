@@ -2757,7 +2757,10 @@ async function renameUseCase(oldName){
   try {
     state.meta.useCases = state.meta.useCases.map(u=>u===oldName?nv:u);
     const touched = state.devices.filter(d=>(d.useCases||[]).includes(oldName));
-    touched.forEach(d=>d.useCases=d.useCases.map(u=>u===oldName?nv:u));
+    touched.forEach(d=>{
+      d.useCases=d.useCases.map(u=>u===oldName?nv:u);
+      if(Array.isArray(d.preferredUseCases)) d.preferredUseCases=d.preferredUseCases.map(u=>u===oldName?nv:u);
+    });
     await store.saveMeta();
     for (const d of touched) await store.saveDevice(d);
     await logChange("Renamed","Use case",oldName,'Now "' + nv + '"' + (touched.length?" · " + touched.length + " device" + (touched.length===1?"":"s") + " updated":""));
@@ -2777,7 +2780,10 @@ async function deleteUseCase(u){
   try {
     state.meta.useCases = state.meta.useCases.filter(x=>x!==u);
     const touched = state.devices.filter(d=>(d.useCases||[]).includes(u));
-    touched.forEach(d=>d.useCases=d.useCases.filter(x=>x!==u));
+    touched.forEach(d=>{
+      d.useCases=d.useCases.filter(x=>x!==u);
+      if(Array.isArray(d.preferredUseCases)) d.preferredUseCases=d.preferredUseCases.filter(x=>x!==u);
+    });
     await store.saveMeta();
     for (const d of touched) await store.saveDevice(d);
     await logChange("Deleted","Use case",u,touched.length?"Removed from " + touched.length + " device" + (touched.length===1?"":"s"):"");
