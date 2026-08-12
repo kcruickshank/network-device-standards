@@ -150,7 +150,14 @@
   .lc-eol{background:linear-gradient(180deg,#FDE7E5,#FDF3F2);border-left:3px solid #C0452F;color:#95321F}
   .gi{font-family:var(--mono);font-weight:600;font-size:12px;color:#946A00}
   .gi-sub{font-family:var(--mono);font-size:11px;color:#946A00;opacity:.85;margin-top:1px}
-  .cg-head{grid-column:1/-1;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-top:4px;border-bottom:1px solid var(--line-soft);padding-bottom:2px}
+  .cg-head{grid-column:1/-1;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-top:4px;border-bottom:1px solid var(--line-soft);padding-bottom:2px;display:flex;align-items:center;gap:6px}
+  .cg-acts{margin-left:auto;display:flex;gap:4px}
+  .cg-btn{
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--accent-deep);background:none;border:1px solid var(--line);border-radius:4px;
+    padding:1px 6px;cursor:pointer;line-height:1.6;
+  }
+  .cg-btn:hover{background:#EDF6FB;border-color:#BFD9E9}
   .acc-block{border-top:1px dashed var(--line);padding-top:9px}
   .acc-block .lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
   .sec-lbl{font-family:var(--disp);font-weight:700;font-size:12px;letter-spacing:.04em;color:var(--ink);margin:8px 0 4px}
@@ -562,6 +569,18 @@
         <button class="btn" id="a-cancel" style="display:none">Cancel edit</button>
       </div>
     </div>
+    <div class="filterbar" id="acc-filterbar">
+      <div class="field">
+        <label for="af-cat">Category</label>
+        <select id="af-cat"><option value="">All categories</option></select>
+      </div>
+      <div class="field grow">
+        <label for="af-q">Search</label>
+        <input id="af-q" type="search" placeholder="Accessory, part number, linked device…">
+      </div>
+      <button class="btn small" id="af-clear">Clear filters</button>
+      <span class="count-pill" id="af-count"></span>
+    </div>
     <table aria-label="Accessory list">
       <thead><tr><th>Accessory</th><th>Part number</th><th style="width:120px">Unit cost</th><th>Used with</th><th style="width:150px"></th></tr></thead>
       <tbody id="acc-table"></tbody>
@@ -569,6 +588,10 @@
     <div id="acc-empty" class="empty" style="display:none;margin-top:14px">
       <div class="big">No accessories yet</div>
       <div>Add power supplies, uplink modules, optics, antennas and mounts above, then link them to devices.</div>
+    </div>
+    <div id="acc-nomatch" class="empty" style="display:none;margin-top:14px">
+      <div class="big">No accessories match</div>
+      <div>Try a different category or search term, or clear the filters.</div>
     </div>
   </section>
 
@@ -2097,13 +2120,21 @@ function renderAccCatOptions(sel){
 function renderAccDeviceChecks(selectedIds){
   const wrap=$("a-devs"); const sel=selectedIds||[];
   if(!state.devices.length){ wrap.innerHTML='<span class="none" style="padding:4px">No devices yet — add devices first, then link accessories to them.</span>'; return; }
-  const types=[...new Set(state.devices.map(d=>d.type||"Untyped"))].sort();
+  const types=[...new Set(state.devices.map(d=>d.type||"Untyped"))].sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
   wrap.innerHTML = types.map(t=>{
     const col=typeColor(t);
-    const items=state.devices.filter(d=>(d.type||"Untyped")===t).sort((a,b)=>a.model.localeCompare(b.model))
-      .map(d=>`<label><input type="checkbox" value="${esc(d.id)}" ${sel.includes(d.id)?"checked":""}><span>${esc(d.model)}</span></label>`).join("");
-    return `<div class="cg-head"><span class="sw" style="background:${col};display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:middle"></span>${esc(t)}</div>${items}`;
+    const items=state.devices.filter(d=>(d.type||"Untyped")===t).sort((a,b)=>a.model.localeCompare(b.model, undefined, {sensitivity:"base"}))
+      .map(d=>`<label><input type="checkbox" value="${esc(d.id)}" data-dtype="${esc(t)}" ${sel.includes(d.id)?"checked":""}><span>${esc(d.model)}</span></label>`).join("");
+    return `<div class="cg-head"><span class="sw" style="background:${col};display:inline-block;width:9px;height:9px;border-radius:2px;vertical-align:middle"></span>${esc(t)}` +
+      `<span class="cg-acts">` +
+        `<button type="button" class="cg-btn" data-tall="${esc(t)}" title="Select every ${esc(t)}">All</button>` +
+        `<button type="button" class="cg-btn" data-tnone="${esc(t)}" title="Clear every ${esc(t)}">Clear</button>` +
+      `</span></div>${items}`;
   }).join("");
+  // per-type select all / clear (scoped to that device type only)
+  const setType=(type,on)=>wrap.querySelectorAll("input[type=checkbox]").forEach(cb=>{ if(cb.dataset.dtype===type) cb.checked=on; });
+  wrap.querySelectorAll("[data-tall]").forEach(b=>b.addEventListener("click",()=>setType(b.dataset.tall,true)));
+  wrap.querySelectorAll("[data-tnone]").forEach(b=>b.addEventListener("click",()=>setType(b.dataset.tnone,false)));
 }
 function setAccDevChecks(on){ $("a-devs").querySelectorAll("input[type=checkbox]").forEach(cb=>cb.checked=on); }
 $("a-devs-all").addEventListener("click",()=>setAccDevChecks(true));
@@ -2115,9 +2146,36 @@ function resetAccForm(){
   renderAccDeviceChecks([]);
   $("a-save").textContent="Save accessory"; $("a-cancel").style.display="none";
 }
+function fillAccFilterOptions(){
+  const sel=$("af-cat"), keep=sel.value;
+  const cats=allAccCategories().filter(c=>state.accessories.some(a=>(a.category||"")===c))
+    .sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
+  const hasUncat=state.accessories.some(a=>!a.category);
+  sel.innerHTML='<option value="">All categories</option>'
+    + cats.map(c=>`<option>${esc(c)}</option>`).join("")
+    + (hasUncat?'<option value="~none">Uncategorised</option>':"");
+  // keep the current choice only if it still exists
+  sel.value=[...sel.options].some(o=>o.value===keep)?keep:"";
+}
 function renderAccTable(){
   const tb=$("acc-table");
-  const rows=state.accessories.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  const total=state.accessories.length;
+  fillAccFilterOptions();
+  const cf=$("af-cat").value, q=$("af-q").value.trim().toLowerCase();
+  const rows=state.accessories.slice().sort((a,b)=>a.name.localeCompare(b.name))
+    .filter(a=>{
+      if (cf==="~none"){ if(a.category) return false; }
+      else if (cf && (a.category||"")!==cf) return false;
+      if (q){
+        const devs=(a.deviceIds||[]).map(id=>state.devices.find(d=>d.id===id)).filter(Boolean)
+          .map(d=>d.model+" "+(d.type||"")).join(" ");
+        const hay=[a.name,a.partNumber||"",a.category||"",devs].join(" ").toLowerCase();
+        if(!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  $("af-count").textContent = total ? rows.length + " of " + total + " accessor" + (total===1?"y":"ies") : "";
+  $("acc-filterbar").style.display = total ? "" : "none";
   const cats=allAccCategories().filter(c=>rows.some(a=>(a.category||"")===c));
   if (rows.some(a=>!a.category)) cats.push("");
   const rowHtml = a=>{
@@ -2149,7 +2207,8 @@ function renderAccTable(){
     const inCat = rows.filter(a=>(a.category||"")===c);
     return `<tr class="grp"><td colspan="5">${esc(c||"Uncategorised")} (${inCat.length})</td></tr>` + inCat.map(rowHtml).join("");
   }).join("");
-  $("acc-empty").style.display = rows.length ? "none" : "";
+  $("acc-empty").style.display = total ? "none" : "";
+  $("acc-nomatch").style.display = (total && !rows.length) ? "" : "none";
   document.querySelector("#view-accessories table").style.display = rows.length ? "" : "none";
   tb.querySelectorAll("[data-aedit]").forEach(b=>b.addEventListener("click",()=>{
     const a=state.accessories.find(x=>x.id===b.dataset.aedit); if(!a) return;
@@ -2175,6 +2234,9 @@ function renderAccTable(){
     busy(false);
   }));
 }
+$("af-cat").addEventListener("change",renderAccTable);
+$("af-q").addEventListener("input",renderAccTable);
+$("af-clear").addEventListener("click",()=>{ $("af-cat").value=""; $("af-q").value=""; renderAccTable(); });
 $("a-cancel").addEventListener("click",resetAccForm);
 $("a-save").addEventListener("click",async ()=>{
   const name=$("a-name").value.trim();
