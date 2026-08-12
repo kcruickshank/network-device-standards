@@ -3626,6 +3626,33 @@ async function activateSharePoint(){
   }
   busy(false);
 }
+/* The origin this page was served from, when it could be hosting the API too
+   (i.e. not opened as a file://). Used to auto-connect when the app is served by
+   the API server itself, as in the Docker / Kubernetes setup. */
+function servedOrigin(){
+  return /^https?:$/.test(location.protocol) ? location.origin.replace(/\/+$/,"") : "";
+}
+/* Is there an NDS API server at this address? */
+async function isNdsApi(base){
+  try {
+    const r=await fetch(base + "/api/v1/ping", {cache:"no-store"});
+    if(!r.ok) return false;
+    const j=await r.json();
+    return !!j && j.service==="nds";
+  } catch(e){ return false; }
+}
+/* Connect to an API server and adopt its catalogue. Throws if it cannot load. */
+async function connectApiAt(url){
+  ApiStore.base=url;
+  const data=await ApiStore.load();
+  store=ApiStore; lsSet(LS_MODE,"api"); lsSet(LS_API,url);
+  $("api-url").value=url; reflectMode("api");
+  state.devices=data.devices; state.accessories=data.accessories; state.links=data.links||[];
+  state.goldenImages=data.goldenImages||[]; state.boms=data.boms||[]; state.sites=data.sites||[];
+  state.changelog=data.changelog||[]; applyMeta(data.meta);
+  if (!data.meta) await ApiStore.saveMeta();
+  setStatus("Connected to API server " + url + ". " + state.devices.length + " devices, " + state.accessories.length + " accessories.","ok");
+}
 async function activateApi(){
   const url=$("api-url").value.trim().replace(/\/+$/,"");
   if(!url){ setStatus("Enter the API server address first.","err"); return; }
@@ -3845,15 +3872,25 @@ $("btn-wipe").addEventListener("click",async ()=>{
   }
 
   const mode=lsGet(LS_MODE), site=lsGet(LS_SITE), apiUrl=lsGet(LS_API);
-  if (mode==="api" && apiUrl){ $("api-url").value=apiUrl; reflectMode("api"); ApiStore.base=apiUrl;
-    try {
-      const data=await ApiStore.load(); store=ApiStore;
-      state.devices=data.devices; state.accessories=data.accessories; state.links=data.links||[];
-      state.goldenImages=data.goldenImages||[]; state.boms=data.boms||[]; state.sites=data.sites||[];
-      state.changelog=data.changelog||[]; applyMeta(data.meta);
-      if (!data.meta) await ApiStore.saveMeta();
-      setStatus("Connected to API server " + apiUrl + ". " + state.devices.length + " devices, " + state.accessories.length + " accessories.","ok");
-    } catch(e){ setStatus("Could not reconnect to the API server: " + e.message + " — falling back to browser storage.","err"); await activateLocal(); }
+  const origin=servedOrigin();
+  if (mode==="api" && apiUrl){ $("api-url").value=apiUrl; reflectMode("api");
+    try { await connectApiAt(apiUrl); }
+    catch(e){
+      // The saved address can go stale (ingress renamed, link shared between sites).
+      // If this page is itself served by an NDS API server, use that rather than
+      // silently dropping the user into their own private browser copy.
+      let recovered=false;
+      if (origin && origin!==apiUrl && await isNdsApi(origin)){
+        try { await connectApiAt(origin); recovered=true; } catch(e2){}
+      }
+      if (!recovered){ setStatus("Could not reconnect to the API server: " + e.message + " — falling back to browser storage.","err"); await activateLocal(); }
+    }
+  } else if (!mode && origin && await isNdsApi(origin)){
+    // First visit in this browser, and the page is served by the API server itself
+    // (Docker / Kubernetes). Join the shared catalogue automatically so a new person
+    // does not have to configure anything. An explicit later choice is remembered.
+    try { await connectApiAt(origin); }
+    catch(e){ setStatus("Could not load the shared catalogue: " + e.message + " — using browser storage.","err"); await activateLocal(); }
   } else if (mode==="sp" && site){ $("sp-url").value=site; reflectMode("sp"); $("sp-url").value=site; SP.site=site; 
     try { const data=await SP.load(); store=SP; state.devices=data.devices; state.accessories=data.accessories; state.links=data.links||[]; state.goldenImages=data.goldenImages||[]; state.boms=data.boms||[]; state.sites=data.sites||[]; state.changelog=data.changelog||[]; applyMeta(data.meta);
       if (!data.meta) await SP.saveMeta();
@@ -3866,6 +3903,9 @@ $("btn-wipe").addEventListener("click",async ()=>{
     else { const s=sampleData(); state.devices=s.devices; state.accessories=s.accessories; state.links=s.links; state.goldenImages=s.goldenImages; LocalStore.persist(); }
     setStatus("Storage: this browser. " + state.devices.length + " devices, " + state.accessories.length + " accessories loaded.","ok");
   }
+  // pre-fill the API address with the origin serving this page, so it is ready to
+  // use even if someone switches modes by hand
+  if (!$("api-url").value && origin) $("api-url").value = origin;
   // guess site URL for convenience when hosted on SharePoint
   if (!$("sp-url").value && /\.sharepoint\.com$/i.test(location.hostname)) {
     const m=location.pathname.match(/^(\/(sites|teams)\/[^/]+)/i);

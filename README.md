@@ -10,7 +10,8 @@ The whole app is one self-contained HTML file. It can run three ways:
    browser only. Good for a quick look or single-user use.
 2. **Shared via the API server** — run the small FastAPI + SQLite service in
    `server/`. Everyone who connects shares one catalogue. (Docker/Kubernetes
-   provided.)
+   provided.) When the app is opened from the server's own address, it connects
+   to that server automatically — no per-person setup.
 3. **Shared via SharePoint** — point the app at SharePoint lists. See
    `docs/SharePoint-Setup-Guide.docx`.
 
@@ -51,8 +52,10 @@ From the repository root:
 ```bash
 docker compose up -d --build
 ```
-Then open `http://THIS-MACHINE:8000`. In the app: **Settings → API server
-(shared) → Connect**.
+Then open `http://THIS-MACHINE:8000`. That's all — when the page is served by
+the API server itself, the app detects it and joins the shared catalogue
+automatically, so new people and new browsers need no setup. (Anyone who
+deliberately switches to another storage mode keeps their choice.)
 
 - Your data persists in the Docker volume `nds-data` (survives restarts and
   rebuilds).
