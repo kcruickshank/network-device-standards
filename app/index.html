@@ -405,6 +405,7 @@
         <label for="f-lc">Check Lifecycle</label>
         <select id="f-lc">
           <option value="">Check Lifecycle</option>
+          <option value="active">Active</option>
           <option value="eos">End of Sale</option>
           <option value="eol">End of Life</option>
           <option value="eosup">End of Support</option>
@@ -1769,6 +1770,8 @@ function renderCatalog(){
   const list = state.devices.filter(d=>{
     if (t && d.type!==t) return false;
     if (u && !(d.useCases||[]).includes(u)) return false;
+    // Active = no end-of-sale/end-of-life status and not flagged end of support
+    if (lcF==="active" && ((d.lifecycle && (d.lifecycle.status==="eos" || d.lifecycle.status==="eol")) || d.endOfSupport)) return false;
     if (lcF==="eos" && !(d.lifecycle && d.lifecycle.status==="eos")) return false;
     if (lcF==="eol" && !(d.lifecycle && d.lifecycle.status==="eol")) return false;
     if (lcF==="eosup" && !d.endOfSupport) return false;
