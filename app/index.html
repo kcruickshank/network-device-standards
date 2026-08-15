@@ -1946,13 +1946,33 @@ function renderLifecycleUI(lc, excludeId, eosup){
   $("d-eosup").checked = !!eosup;
   $("d-eosup-date").value = (eosup && eosup.date) || "";
   toggleEosupDate();
-  const opts = state.devices.filter(d=>d.id!==excludeId)
-    .slice().sort((a,b)=>a.model.localeCompare(b.model, undefined, {sensitivity:"base"}))
-    .map(d=>`<option value="${esc(d.id)}" ${d.id===lc.replacementId?"selected":""}>${esc(d.model)}</option>`).join("");
-  $("d-lc-repl").innerHTML = '<option value="">— None selected —</option>' + opts;
-  if(lc.replacementId) $("d-lc-repl").value = lc.replacementId;
+  renderReplacementOptions(lc.replacementId, excludeId, true);
   toggleLifecycleFields();
 }
+/* Successor list: only devices of the same type as the one being edited.
+   keepOffType is used when loading a saved device, so a successor stored before
+   this rule (or before a type change) is still shown - marked with its own type -
+   rather than being silently dropped from the record. */
+function renderReplacementOptions(chosenId, excludeId, keepOffType){
+  const sel=$("d-lc-repl");
+  const type=$("d-type").value;
+  const ex=(excludeId!==undefined && excludeId!==null) ? excludeId : state.editingDeviceId;
+  const chosen=chosenId||"";
+  let list=state.devices.filter(d=>d.id!==ex && (d.type||"")===type);
+  if (keepOffType && chosen){
+    const cd=state.devices.find(d=>d.id===chosen);
+    if (cd && cd.id!==ex && !list.some(d=>d.id===cd.id)) list=[...list, cd];
+  }
+  list.sort((a,b)=>a.model.localeCompare(b.model, undefined, {sensitivity:"base"}));
+  sel.innerHTML = `<option value="">${type?"— None selected —":"— Select a device type first —"}</option>`
+    + list.map(d=>{
+        const off=(d.type||"")!==type ? ` · ${esc(d.type||"Untyped")}` : "";
+        return `<option value="${esc(d.id)}">${esc(d.model)}${off}</option>`;
+      }).join("");
+  sel.value = list.some(d=>d.id===chosen) ? chosen : "";
+}
+// Changing the device type re-scopes the successor list to that type.
+$("d-type").addEventListener("change",()=>renderReplacementOptions($("d-lc-repl").value, undefined, false));
 function toggleLifecycleFields(){
   const on = !!$("d-lifecycle").value;
   $("d-lc-date-wrap").style.display = on ? "" : "none";
