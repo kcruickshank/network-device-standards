@@ -150,6 +150,7 @@
   .lc-eol{background:linear-gradient(180deg,#FDE7E5,#FDF3F2);border-left:3px solid #C0452F;color:#95321F}
   .gi{font-family:var(--mono);font-weight:600;font-size:12px;color:#946A00}
   .gi-sub{font-family:var(--mono);font-size:11px;color:#946A00;opacity:.85;margin-top:1px}
+  .last-avail{font-family:var(--mono);font-size:11px;color:#B0381F;font-weight:700;opacity:1}
   .cg-head{grid-column:1/-1;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-top:4px;border-bottom:1px solid var(--line-soft);padding-bottom:2px;display:flex;align-items:center;gap:6px}
   .cg-acts{margin-left:auto;display:flex;gap:4px}
   .cg-btn{
@@ -660,15 +661,30 @@
           <input id="g-version" placeholder="e.g. IOS-XE 17.12.04">
         </div>
         <div class="field">
-          <label for="g-updated">Golden image updated *</label>
+          <label for="g-updated">Current review date *</label>
           <input id="g-updated" type="date">
+        </div>
+        <div class="field" id="g-next-wrap">
+          <label for="g-next">Next review date</label>
+          <input id="g-next" readonly tabindex="-1" style="background:var(--panel-2);color:var(--muted)">
+          <div class="hint">Six months on, moved to the Monday if it lands on a weekend.</div>
         </div>
         <div class="field span2">
           <label for="g-file">Image file (optional)</label>
           <input id="g-file" placeholder="e.g. cat9k_iosxe.17.12.04.SPA.bin">
         </div>
         <div class="field span2">
+          <label style="display:inline-flex;align-items:center;gap:7px;font-size:13.5px;cursor:pointer;text-transform:none;letter-spacing:0;font-family:var(--sans);color:var(--ink)">
+            <input type="checkbox" id="g-last"> Last available image
+          </label>
+          <div class="hint" style="margin-top:4px">Tick when no newer image is expected. Review dates stop applying and the catalog shows “Last Available Image” instead.</div>
+        </div>
+        <div class="field span2">
           <label>Applies to devices</label>
+          <div style="display:flex;gap:8px;margin-bottom:6px">
+            <button type="button" class="btn small" id="g-devs-all">Select all devices</button>
+            <button type="button" class="btn small" id="g-devs-none">Clear all</button>
+          </div>
           <div class="checkgrid" id="g-devs"></div>
           <div class="hint" style="margin-top:6px">A device can only have one golden image — assigning it here moves it off any other image.</div>
         </div>
@@ -679,7 +695,7 @@
       </div>
     </div>
     <table aria-label="Golden images">
-      <thead><tr><th>Version</th><th>Image file</th><th style="width:130px">Updated</th><th>Used with</th><th style="width:150px"></th></tr></thead>
+      <thead><tr><th>Version</th><th>Image file</th><th style="width:130px">Current review</th><th style="width:130px">Next review</th><th>Used with</th><th style="width:150px"></th></tr></thead>
       <tbody id="img-table"></tbody>
     </table>
     <div id="img-empty" class="empty" style="display:none;margin-top:14px">
@@ -1541,8 +1557,9 @@ function curSymbol(){ return (CURRENCIES[activeCurrency()]||CURRENCIES.EUR).symb
 function money(n){ return activeCurrency() + " " + curSymbol() + (Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function eur(n){ return money(n); }   // alias: all existing callers now follow the active currency
 const FIELD_LABELS = { model:"model", type:"device type", description:"description", notes:"notes", useCases:"use cases", preferredUseCases:"preferred use cases",
-  features:"features", license:"license", ports:"port count", cost:"unit cost", costDate:"price date", version:"version", file:"image file", updated:"updated date",
-  name:"name", partNumber:"part number", category:"category", deviceIds:"associated devices", title:"title", url:"URL" };
+  features:"features", license:"license", ports:"port count", cost:"unit cost", costDate:"price date", version:"version", file:"image file", updated:"current review date",
+  name:"name", partNumber:"part number", category:"category", deviceIds:"associated devices", title:"title", url:"URL",
+  lastAvailable:"last available image" };
 function diffFields(prev, next, fields){
   return fields.filter(f=>JSON.stringify(prev[f]??null)!==JSON.stringify(next[f]??null)).map(f=>FIELD_LABELS[f]||f);
 }
@@ -1882,7 +1899,11 @@ function renderCatalog(){
         <div class="uc-row">${ucs}</div>
         ${fts?`<div class="sec-lbl">Features</div><div class="uc-row">${fts}</div>`:""}
         ${deviceLicenses(d).length?`<div><div class="sec-lbl">License${deviceLicenses(d).length>1?"s":""}</div>${deviceLicenses(d).map(l=>`<div class="lic">⛉ ${esc(l)}</div>`).join("")}</div>`:""}
-        ${gimg?`<div class="gold-block"><div class="lbl">Golden image</div><div class="gi">★ ${esc(gimg.version)}${gimg.file?` <span style="font-weight:400">· ${esc(gimg.file)}</span>`:""}</div><div class="gi-sub">Updated ${esc(fmtDate(gimg.updated))}</div></div>`:""}
+        ${gimg?`<div class="gold-block"><div class="lbl">Golden image</div><div class="gi">★ ${esc(gimg.version)}${gimg.file?` <span style="font-weight:400">· ${esc(gimg.file)}</span>`:""}</div>${
+          gimg.lastAvailable
+            ? `<div class="gi-sub last-avail">Last Available Image</div>`
+            : `<div class="gi-sub">Current Review Date ${esc(fmtDate(gimg.updated))} · Next Review Date ${esc(fmtDate(nextReviewISO(gimg.updated)))}</div>`
+        }</div>`:""}
         <div class="acc-block"><div class="lbl">Accessories (${accs.length})</div>${accHtml}</div>
         ${lnkHtml}
         ${(d.cost!=null && d.cost!=="" && !isNaN(Number(d.cost)))?`<div class="cost">Unit cost: ${money(Number(d.cost))}${d.costDate?` <span class="csub">· priced ${esc(fmtDate(d.costDate))}</span>`:""}</div>`:""}
@@ -1981,7 +2002,7 @@ function renderGImageOptions(devId){
   const cur = devId ? deviceGoldenImage(devId) : null;
   $("d-gimage").innerHTML = '<option value="">— None —</option>' + state.goldenImages.slice()
     .sort((a,b)=>(a.version||"").localeCompare(b.version||""))
-    .map(g=>`<option value="${esc(g.id)}" ${cur&&cur.id===g.id?"selected":""}>${esc(g.version)}${g.updated?" (updated "+fmtDate(g.updated)+")":""}</option>`).join("");
+    .map(g=>`<option value="${esc(g.id)}" ${cur&&cur.id===g.id?"selected":""}>${esc(g.version)}${g.lastAvailable?" (last available image)":(g.updated?" (reviewed "+fmtDate(g.updated)+")":"")}</option>`).join("");
 }
 function renderLicenseChecks(selected){
   selected = selected || [];
@@ -2376,19 +2397,62 @@ function fmtDate(d){
   catch(e){ return d; }
 }
 function todayISO(){ const n=new Date(); return n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,"0")+"-"+String(n.getDate()).padStart(2,"0"); }
+function isoOf(dt){ return dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0"); }
+/* When a golden image is next due for review: six months after the current
+   review date, moved forward to the Monday if it lands on a weekend. */
+function nextReviewISO(current){
+  if(!current) return "";
+  const p=String(current).split("-").map(Number);
+  if(p.length!==3 || p.some(n=>!Number.isFinite(n))) return "";
+  const [y,m,d]=p;
+  const dt=new Date(y, m-1+6, 1);
+  // clamp to the end of the target month (e.g. 31 Aug + 6 months -> 28/29 Feb)
+  const lastDay=new Date(dt.getFullYear(), dt.getMonth()+1, 0).getDate();
+  dt.setDate(Math.min(d, lastDay));
+  const dow=dt.getDay();
+  if (dow===6) dt.setDate(dt.getDate()+2);       // Saturday -> Monday
+  else if (dow===0) dt.setDate(dt.getDate()+1);  // Sunday   -> Monday
+  return isoOf(dt);
+}
 function renderImageDeviceChecks(selectedIds){
   const wrap=$("g-devs"); const sel=selectedIds||[];
   if(!state.devices.length){ wrap.innerHTML='<span class="none" style="padding:4px">No devices yet — add devices first, then assign their golden image.</span>'; return; }
-  wrap.innerHTML = state.devices.slice().sort((a,b)=>a.model.localeCompare(b.model))
-    .map(d=>{
-      const other = deviceGoldenImage(d.id);
-      const note = other && !(sel.includes(d.id)) && other.id!==state.editingImgId ? ` <span style="color:var(--muted);font-size:11px">(on ${esc(other.version)})</span>` : "";
-      return `<label><input type="checkbox" value="${esc(d.id)}" ${sel.includes(d.id)?"checked":""}><span>${esc(d.model)} <span style="color:var(--muted);font-size:11.5px">· ${esc(d.type||"")}</span>${note}</span></label>`;
-    }).join("");
+  const types=[...new Set(state.devices.map(d=>d.type||"Untyped"))].sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
+  wrap.innerHTML = types.map(t=>{
+    const col=typeColor(t);
+    const items=state.devices.filter(d=>(d.type||"Untyped")===t).sort((a,b)=>a.model.localeCompare(b.model, undefined, {sensitivity:"base"}))
+      .map(d=>{
+        const other = deviceGoldenImage(d.id);
+        const note = other && !(sel.includes(d.id)) && other.id!==state.editingImgId ? ` <span style="color:var(--muted);font-size:11px">(on ${esc(other.version)})</span>` : "";
+        return `<label><input type="checkbox" value="${esc(d.id)}" data-dtype="${esc(t)}" ${sel.includes(d.id)?"checked":""}><span>${esc(d.model)}${note}</span></label>`;
+      }).join("");
+    return `<div class="cg-head"><span class="sw" style="background:${col};display:inline-block;width:9px;height:9px;border-radius:2px;vertical-align:middle"></span>${esc(t)}` +
+      `<span class="cg-acts">` +
+        `<button type="button" class="cg-btn" data-tall="${esc(t)}" title="Select every ${esc(t)}">All</button>` +
+        `<button type="button" class="cg-btn" data-tnone="${esc(t)}" title="Clear every ${esc(t)}">Clear</button>` +
+      `</span></div>${items}`;
+  }).join("");
+  const setType=(type,on)=>wrap.querySelectorAll("input[type=checkbox]").forEach(cb=>{ if(cb.dataset.dtype===type) cb.checked=on; });
+  wrap.querySelectorAll("[data-tall]").forEach(b=>b.addEventListener("click",()=>setType(b.dataset.tall,true)));
+  wrap.querySelectorAll("[data-tnone]").forEach(b=>b.addEventListener("click",()=>setType(b.dataset.tnone,false)));
 }
+function setImgDevChecks(on){ $("g-devs").querySelectorAll("input[type=checkbox]").forEach(cb=>cb.checked=on); }
+$("g-devs-all").addEventListener("click",()=>setImgDevChecks(true));
+$("g-devs-none").addEventListener("click",()=>setImgDevChecks(false));
+/* Keep the derived next-review field in step with the current review date. */
+function syncNextReview(){
+  const last=$("g-last").checked;
+  $("g-next-wrap").style.display = last ? "none" : "";
+  const n=nextReviewISO($("g-updated").value);
+  $("g-next").value = n ? fmtDate(n) : "";
+}
+$("g-updated").addEventListener("change",syncNextReview);
+$("g-updated").addEventListener("input",syncNextReview);
+$("g-last").addEventListener("change",syncNextReview);
 function resetImageForm(){
   state.editingImgId=null;
   $("g-version").value=""; $("g-file").value=""; $("g-updated").value=todayISO();
+  $("g-last").checked=false; syncNextReview();
   renderImageDeviceChecks([]);
   $("g-save").textContent="Save golden image"; $("g-cancel").style.display="none";
 }
@@ -2398,10 +2462,14 @@ function renderImageTable(){
   tb.innerHTML = rows.map(g=>{
     const devs=(g.deviceIds||[]).map(id=>state.devices.find(d=>d.id===id)).filter(Boolean)
       .map(d=>`<span class="tag">${esc(d.model)}</span>`).join("") || '<span class="none">Not assigned</span>';
+    const lastAvail = !!g.lastAvailable;
+    const curCell = lastAvail ? '<span class="last-avail">Last Available Image</span>' : `<span class="when">${esc(fmtDate(g.updated))}</span>`;
+    const nextCell = lastAvail ? '<span class="none">—</span>' : `<span class="when">${esc(fmtDate(nextReviewISO(g.updated)))}</span>`;
     return `<tr>
       <td><span class="gi">★ ${esc(g.version)}</span></td>
       <td><span class="pn">${esc(g.file||"—")}</span></td>
-      <td><span class="when">${esc(fmtDate(g.updated))}</span></td>
+      <td>${curCell}</td>
+      <td>${nextCell}</td>
       <td>${devs}</td>
       <td><button class="btn small" data-gedit="${g.id}">Edit</button>
           <button class="btn small danger" data-gdel="${g.id}">Delete</button></td>
@@ -2413,6 +2481,7 @@ function renderImageTable(){
     const g=state.goldenImages.find(x=>x.id===b.dataset.gedit); if(!g) return;
     state.editingImgId=g.id;
     $("g-version").value=g.version||""; $("g-file").value=g.file||""; $("g-updated").value=g.updated||todayISO();
+    $("g-last").checked=!!g.lastAvailable; syncNextReview();
     renderImageDeviceChecks(g.deviceIds||[]);
     $("g-save").textContent="Update golden image"; $("g-cancel").style.display="";
     window.scrollTo({top:0});
@@ -2441,7 +2510,8 @@ $("g-save").addEventListener("click",async ()=>{
   let g; const isNew=!state.editingImgId; let prev=null;
   if(state.editingImgId){ g=state.goldenImages.find(x=>x.id===state.editingImgId); prev={...g, deviceIds:[...(g.deviceIds||[])]}; }
   else { g={ id:uid() }; state.goldenImages.push(g); }
-  Object.assign(g,{ version, file:$("g-file").value.trim(), updated, deviceIds });
+  const lastAvailable=$("g-last").checked;
+  Object.assign(g,{ version, file:$("g-file").value.trim(), updated, lastAvailable, deviceIds });
   busy(true);
   try {
     // a device carries exactly one golden image: pull selected devices off other images
@@ -2449,9 +2519,9 @@ $("g-save").addEventListener("click",async ()=>{
     others.forEach(o=>o.deviceIds=o.deviceIds.filter(id=>!deviceIds.includes(id)));
     await store.saveImage(g);
     for (const o of others) await store.saveImage(o);
-    if (isNew) await logChange("Added","Golden image",version,"Updated " + fmtDate(updated) + (deviceIds.length?" · " + deviceIds.length + " device" + (deviceIds.length===1?"":"s"):""));
+    if (isNew) await logChange("Added","Golden image",version,(lastAvailable?"Last available image":"Reviewed " + fmtDate(updated) + " · next " + fmtDate(nextReviewISO(updated))) + (deviceIds.length?" · " + deviceIds.length + " device" + (deviceIds.length===1?"":"s"):""));
     else {
-      const changed = diffFields(prev,g,["version","file","updated","deviceIds"]);
+      const changed = diffFields(prev,g,["version","file","updated","lastAvailable","deviceIds"]);
       await logChange("Edited","Golden image",version, changed.length ? "Changed: " + changed.join(", ") : "No field changes");
     }
     toast("Saved " + version + ".");
@@ -3918,7 +3988,7 @@ $("btn-wipe").addEventListener("click",async ()=>{
   renderAccCatOptions(ACC_CATEGORIES[0]); renderAccDeviceChecks([]);
   renderLinkCatOptions(LINK_CATEGORIES[0]); renderLinkDeviceChecks([]);
   renderLicenseChecks([]); renderFeatureChecks([]);
-  $("g-updated").value=todayISO(); renderGImageOptions(null); renderImageDeviceChecks([]);
+  $("g-updated").value=todayISO(); syncNextReview(); renderGImageOptions(null); renderImageDeviceChecks([]);
 
   // Packaged-app mode: storage handled by the Python host, no mode switching.
   const appKind = await detectAppMode();
