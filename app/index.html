@@ -135,6 +135,17 @@
   .uc.pref::before{content:"★ ";color:var(--amber);font-weight:700}
   /* preferred-device markers */
   .pref-badge{font-size:16px;line-height:1;color:var(--amber);margin-left:8px;flex-shrink:0;text-shadow:0 1px 2px rgba(8,16,26,.5)}
+  /* Recommended = preferred for the use case currently being filtered on, so there
+     is one unambiguous answer. Green, because amber and red already mean
+     end-of-sale and end-of-life here. */
+  .card.recommended{border-color:var(--ok);box-shadow:0 0 0 3px rgba(46,158,99,.22)}
+  .crow.recommended{box-shadow:0 0 0 2px rgba(46,158,99,.28)}
+  .rec-pill{
+    font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+    color:#fff;background:var(--ok);border-radius:4px;padding:3px 8px;margin-left:8px;
+    white-space:nowrap;flex-shrink:0;
+  }
+  .crow .rec-pill{margin-left:0}
   .crow .cpref{color:var(--amber);font-size:14px;flex-shrink:0}
   .pref-star{margin-left:auto;background:none;border:0;cursor:pointer;font-size:15px;line-height:1;color:var(--line);padding:0 2px;flex-shrink:0}
   .pref-star.on{color:var(--amber)}
@@ -1800,7 +1811,16 @@ function renderCatalog(){
       if (!hay.includes(q)) return false;
     }
     return true;
-  }).sort((a,b)=>(a.type||"").localeCompare(b.type||"") || a.model.localeCompare(b.model));
+  }).sort((a,b)=>{
+    // When filtering by a use case there is a definite recommended device, so
+    // float it to the front - being first beats any amount of styling.
+    if (u){
+      const pa=(a.preferredUseCases||[]).includes(u)?0:1;
+      const pb=(b.preferredUseCases||[]).includes(u)?0:1;
+      if (pa!==pb) return pa-pb;
+    }
+    return (a.type||"").localeCompare(b.type||"") || a.model.localeCompare(b.model);
+  });
 
   $("f-count").textContent = list.length + " of " + state.devices.length + " device" + (state.devices.length===1?"":"s");
   const grid=$("catalog-grid");
@@ -1810,8 +1830,12 @@ function renderCatalog(){
       const col = typeColor(d.type);
       const prefUC = d.preferredUseCases||[];
       const ucs = (d.useCases||[]).map(x=>`<span class="uc ${u&&x===u?"hit":""} ${prefUC.includes(x)?"pref":""}">${esc(x)}</span>`).join("") || '<span class="none">No use cases</span>';
-      const showStar = u ? prefUC.includes(u) : prefUC.length>0;
-      const rowStar = showStar ? `<span class="cpref" title="${u?`Preferred device for &ldquo;${esc(u)}&rdquo;`:`Preferred for: ${esc(prefUC.join(", "))}`}">★</span>` : "";
+      const isRecommended = !!u && prefUC.includes(u);
+      const rowStar = isRecommended
+        ? `<span class="rec-pill" title="Recommended device for &ldquo;${esc(u)}&rdquo;">★ Recommended</span>`
+        : (!u && prefUC.length
+            ? `<span class="cpref" title="Preferred for: ${esc(prefUC.join(", "))}">★</span>`
+            : "");
       const ftList = (d.features||[]);
       const ftGroup = ftList.length
         ? `<span class="cgroup cucs"><span class="sec-lbl">Features</span><span class="uc-row">${ftList.map(x=>`<span class="uc ft">${esc(x)}</span>`).join("")}</span></span>`
@@ -1826,7 +1850,7 @@ function renderCatalog(){
       const costGroup = (d.cost!=null && d.cost!=="" && !isNaN(Number(d.cost)))
         ? `<span class="cgroup cucs"><span class="sec-lbl">Unit cost</span><span class="cost" style="font-size:12.5px">${money(Number(d.cost))}${d.costDate?` <span class="csub">· priced ${esc(fmtDate(d.costDate))}</span>`:""}</span></span>`
         : "";
-      return `<div class="crow" style="border-left-color:${col}">
+      return `<div class="crow${isRecommended?" recommended":""}" style="border-left-color:${col}">
         <span class="ctype" style="background:${col}">${esc(d.type||"Untyped")}</span>
         ${rowStar}<span class="cmodel">${esc(d.model)}</span>
         <span class="cdesc">${esc(d.description||"")}</span>
@@ -1849,8 +1873,14 @@ function renderCatalog(){
     const pLabel = realPorts ? `<span class="pcount">${realPorts}P</span>` : "";
     const prefUC = d.preferredUseCases||[];
     const ucs = (d.useCases||[]).map(x=>`<span class="uc ${u&&x===u?"hit":""} ${prefUC.includes(x)?"pref":""}">${esc(x)}</span>`).join("") || '<span class="none">No use cases tagged</span>';
-    const showStar = u ? prefUC.includes(u) : prefUC.length>0;
-    const prefBadge = showStar ? `<span class="pref-badge" title="${u?`Preferred device for &ldquo;${esc(u)}&rdquo;`:`Preferred for: ${esc(prefUC.join(", "))}`}">★</span>` : "";
+    // Loud "recommended" treatment only when a use case is filtered, where the
+    // answer is unambiguous. Otherwise keep the quiet star (recommended for what?).
+    const isRecommended = !!u && prefUC.includes(u);
+    const prefBadge = isRecommended
+      ? `<span class="rec-pill" title="Recommended device for &ldquo;${esc(u)}&rdquo;">★ Recommended</span>`
+      : (!u && prefUC.length
+          ? `<span class="pref-badge" title="Preferred for: ${esc(prefUC.join(", "))}">★</span>`
+          : "");
     const fts = (d.features||[]).map(x=>`<span class="uc ft">${esc(x)}</span>`).join("");
     const accs = deviceAccessories(d.id);
     let accHtml = '<div class="none">No accessories linked yet</div>';
@@ -1890,7 +1920,7 @@ function renderCatalog(){
               .map(l=>`<div class="acc-line"><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.title)} ↗</a></div>`).join("")
         ).join("") + `</div>`;
     }
-    return `<article class="card">
+    return `<article class="card${isRecommended?" recommended":""}">
       <div class="faceplate"><div class="ports" aria-hidden="true">${ports}</div>${pLabel}<span class="plate">${esc(d.model)}</span>${prefBadge}</div>
       <div class="card-body">
         <div class="card-top"><h3>${esc(d.model)}</h3><span class="typechip" style="background:${col}">${esc(d.type||"Untyped")}</span></div>
