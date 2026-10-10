@@ -143,6 +143,11 @@
     white-space:nowrap;flex-shrink:0;
   }
   .crow .rec-pill{margin-left:0}
+  .rank-warn{
+    font-size:12.5px;line-height:1.45;color:#8A4A10;background:#FCF3E3;
+    border:1px solid #E8C98A;border-left:3px solid var(--amber);
+    border-radius:6px;padding:6px 9px;margin-top:6px;
+  }
   .rec-pill.r1{background:var(--ok)}
   .rec-pill.r2{background:var(--accent)}
   .rec-pill.r3{background:var(--muted)}
@@ -453,13 +458,9 @@
         </div>
         <div class="field">
           <label for="d-rank">Choice ranking</label>
-          <select id="d-rank">
-            <option value="">— Not ranked —</option>
-            <option value="1">1st choice</option>
-            <option value="2">2nd choice</option>
-            <option value="3">3rd choice</option>
-          </select>
+          <select id="d-rank"></select>
           <div class="hint">Which device to reach for within this device type. One 1st choice per type.</div>
+          <div class="rank-warn" id="d-rank-note" style="display:none"></div>
         </div>
         <div class="field span2">
           <label for="d-desc">Description *</label>
@@ -2005,7 +2006,7 @@ function renderReplacementOptions(chosenId, excludeId, keepOffType){
   sel.value = list.some(d=>d.id===chosen) ? chosen : "";
 }
 // Changing the device type re-scopes the successor list to that type.
-$("d-type").addEventListener("change",()=>renderReplacementOptions($("d-lc-repl").value, undefined, false));
+$("d-type").addEventListener("change",()=>{ renderReplacementOptions($("d-lc-repl").value, undefined, false); renderRankOptions(); });
 function toggleLifecycleFields(){
   const on = !!$("d-lifecycle").value;
   $("d-lc-date-wrap").style.display = on ? "" : "none";
@@ -2030,6 +2031,34 @@ function deviceRank(d){
   if(Array.isArray(d.preferredUseCases) && d.preferredUseCases.length) return 1;
   return 0;
 }
+/* Which device already holds a rank within a device type, ignoring the one being
+   edited (so a device is never reported as clashing with itself). */
+function rankHolder(type, rank, excludeId){
+  if(!rank) return null;
+  return state.devices.find(o=>o.id!==excludeId && (o.type||"")===(type||"") && deviceRank(o)===rank) || null;
+}
+/* Rebuild the ranking dropdown, naming the device each taken rank belongs to so
+   a clash is visible before it is picked rather than after saving. */
+function renderRankOptions(sel){
+  const type=$("d-type").value, ex=state.editingDeviceId;
+  const keep = sel!==undefined ? String(sel||"") : $("d-rank").value;
+  $("d-rank").innerHTML = '<option value="">— Not ranked —</option>' +
+    [1,2,3].map(r=>{
+      const h=rankHolder(type,r,ex);
+      return `<option value="${r}">${RANK_LABELS[r]}${h?" — currently "+esc(h.model):""}</option>`;
+    }).join("");
+  $("d-rank").value=keep;
+  syncRankNotice();
+}
+function syncRankNotice(){
+  const el=$("d-rank-note"), r=Number($("d-rank").value)||0;
+  const h=rankHolder($("d-type").value, r, state.editingDeviceId);
+  if(!h){ el.style.display="none"; el.textContent=""; return; }
+  el.innerHTML = `⚠ <strong>${esc(h.model)}</strong> is currently the ${RANK_LABELS[r]} `
+    + `${esc($("d-type").value||"device")}. Saving will unassign it — you'll be asked to confirm.`;
+  el.style.display="";
+}
+$("d-rank").addEventListener("change", syncRankNotice);
 function renderUseCaseChecks(selected){
   selected = selected || [];
   const wrap=$("d-usecases");
@@ -2061,8 +2090,8 @@ function resetDeviceForm(){
   state.editingDeviceId=null;
   $("device-eyebrow").textContent="New standard"; $("device-title").textContent="Add device";
   $("d-model").value=""; $("d-desc").value=""; $("d-notes").value=""; $("d-ports").value=""; $("d-cost").value=""; $("d-cost-date").value=""; $("d-uc-new").value=""; $("d-ft-new").value="";
-  $("d-rank").value="";
   renderDeviceTypeOptions("");
+  renderRankOptions("");
   renderLifecycleUI(null, null, null);
   renderLicenseChecks([]);
   renderGImageOptions(null);
@@ -2083,7 +2112,7 @@ function editDevice(id){
   renderLicenseChecks(deviceLicenses(d));
   renderGImageOptions(id);
   renderUseCaseChecks(d.useCases||[]);
-  $("d-rank").value = deviceRank(d) || "";
+  renderRankOptions(deviceRank(d) || "");
   renderFeatureChecks(d.features||[]);
   $("d-delete").style.display="";
   switchView("device");
@@ -2121,6 +2150,14 @@ $("d-save").addEventListener("click",async ()=>{
   if(!(Number.isFinite(portsValRaw) && portsValRaw>0)){ toast("A port count is required."); $("d-ports").focus(); return; }
   const useCases=[...$("d-usecases").querySelectorAll("input:checked")].map(i=>i.value);
   const rank=Number($("d-rank").value)||undefined;
+  // Taking a rank off another device is a change to a record the user is not
+  // looking at, so confirm it before anything is written or created.
+  const takenFrom = rank ? rankHolder($("d-type").value, rank, state.editingDeviceId) : null;
+  if (takenFrom && !confirm(
+      RANK_LABELS[rank] + " for " + ($("d-type").value || "this device type") +
+      " is currently assigned to " + takenFrom.model + ".\n\n" +
+      "Make " + model + " the " + RANK_LABELS[rank] + " instead?\n\n" +
+      takenFrom.model + " will be left unranked.")) return;
   const features=[...$("d-features").querySelectorAll("input:checked")].map(i=>i.value);
   let d; const isNew = !state.editingDeviceId; let prev=null;
   if (state.editingDeviceId){ d=state.devices.find(x=>x.id===state.editingDeviceId); prev={...d, useCases:[...(d.useCases||[])], features:[...(d.features||[])]}; }
