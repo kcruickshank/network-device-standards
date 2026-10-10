@@ -1115,6 +1115,7 @@
         <div class="field grow"><label for="bm-q">Search</label><input id="bm-q" type="search" placeholder="Model, description…"></div>
       </div>
       <div class="pick-list" id="bm-picklist"></div>
+      <div id="bm-picklist-note" class="hint" style="display:none;margin-top:6px"></div>
       <div class="field" style="max-width:180px;margin-top:12px"><label for="bm-qty">Quantity</label><input id="bm-qty" type="number" min="1" value="1"></div>
       <div class="form-actions">
         <button class="btn primary" id="bm-next" disabled>Next: accessories →</button>
@@ -1805,8 +1806,7 @@ function renderCatalog(){
   const list = state.devices.filter(d=>{
     if (t && d.type!==t) return false;
     if (u && !(d.useCases||[]).includes(u)) return false;
-    // Active = no end-of-sale/end-of-life status and not flagged end of support
-    if (lcF==="active" && ((d.lifecycle && (d.lifecycle.status==="eos" || d.lifecycle.status==="eol")) || d.endOfSupport)) return false;
+    if (lcF==="active" && !isActiveDevice(d)) return false;
     if (lcF==="eos" && !(d.lifecycle && d.lifecycle.status==="eos")) return false;
     if (lcF==="eol" && !(d.lifecycle && d.lifecycle.status==="eol")) return false;
     if (lcF==="eosup" && !d.endOfSupport) return false;
@@ -2022,6 +2022,10 @@ $("d-eosup").addEventListener("change",toggleEosupDate);
    taking the device's best standing, so existing data still reads sensibly
    until the device is next saved. */
 const RANK_LABELS = {1:"1st choice", 2:"2nd choice", 3:"3rd choice"};
+/* Active = no end-of-sale / end-of-life status, and not flagged end of support. */
+function isActiveDevice(d){
+  return !((d && d.lifecycle && (d.lifecycle.status==="eos" || d.lifecycle.status==="eol")) || (d && d.endOfSupport));
+}
 function deviceRank(d){
   if(!d) return 0;
   const r=Number(d.rank);
@@ -3521,20 +3525,32 @@ $("bm-typenext").addEventListener("click",()=>{ if($("bm-accmodel").value) showA
 function closeAddItemModal(){ $("bom-modal").classList.remove("open"); }
 function renderPickList(){
   const t=$("bm-type").value, u=$("bm-uc").value, q=$("bm-q").value.trim().toLowerCase();
-  const list=state.devices.filter(d=>{
+  const all=state.devices.filter(d=>{
     if(t && d.type!==t) return false;
     if(u && !(d.useCases||[]).includes(u)) return false;
     if(q){ const hay=[d.model,d.type,d.description,(d.useCases||[]).join(" ")].join(" ").toLowerCase(); if(!hay.includes(q)) return false; }
     return true;
-  }).sort((a,b)=>(a.type||"").localeCompare(b.type||"")||a.model.localeCompare(b.model));
+  });
+  // Only active devices can be quoted - anything end of sale, end of life or
+  // end of support should not reach a new bill of materials.
+  const list=all.filter(isActiveDevice)
+    .sort((a,b)=>(a.type||"").localeCompare(b.type||"")
+      || ((deviceRank(a)||99)-(deviceRank(b)||99))
+      || a.model.localeCompare(b.model));
+  const hidden=all.length-list.length;
   $("bm-picklist").innerHTML = list.length ? list.map(d=>{
-    const col=typeColor(d.type), sel=bmSelectedDevice===d.id;
+    const col=typeColor(d.type), sel=bmSelectedDevice===d.id, r=deviceRank(d);
     return `<div class="pick-row ${sel?"sel":""}" data-pick="${d.id}">
       <span class="pr-type" style="background:${col}">${esc(d.type||"Untyped")}</span>
       <strong>${esc(d.model)}</strong>
+      ${r?`<span class="rec-pill r${r}" style="margin-left:0">${RANK_LABELS[r]}</span>`:""}
       <span style="color:var(--muted);font-size:12.5px;flex:1">${esc(d.description||"")}</span>
     </div>`;
-  }).join("") : '<div style="padding:14px;color:var(--muted)">No devices match.</div>';
+  }).join("") : '<div style="padding:14px;color:var(--muted)">No active devices match.</div>';
+  $("bm-picklist-note").textContent = hidden
+    ? hidden + " device" + (hidden===1?"":"s") + " hidden - end of sale, end of life or end of support."
+    : "";
+  $("bm-picklist-note").style.display = hidden ? "" : "none";
   $("bm-picklist").querySelectorAll("[data-pick]").forEach(r=>r.addEventListener("click",()=>{
     bmSelectedDevice=r.dataset.pick; renderPickList(); $("bm-next").disabled=false;
   }));
@@ -3543,7 +3559,20 @@ function renderPickList(){
 $("bm-q").addEventListener("input",renderPickList);
 $("bm-cancel").addEventListener("click",closeAddItemModal);
 $("bm-cancel2").addEventListener("click",closeAddItemModal);
-$("bom-modal").addEventListener("click",e=>{ if(e.target===$("bom-modal")) closeAddItemModal(); });
+/* Close only on a click that both started and ended on the backdrop. A plain
+   click check closes the dialog when a drag starts inside the panel and ends
+   outside it - selecting text, dragging across the pick list, or grabbing the
+   dialog's own scrollbar - because the click event resolves to their common
+   ancestor, which is the backdrop. */
+let bomPressOnBackdrop=false;
+const onScrollbar=(el,e)=> e.offsetX>el.clientWidth || e.offsetY>el.clientHeight;
+$("bom-modal").addEventListener("mousedown",e=>{
+  bomPressOnBackdrop = (e.target===$("bom-modal") && !onScrollbar($("bom-modal"),e));
+});
+$("bom-modal").addEventListener("click",e=>{
+  if(e.target===$("bom-modal") && bomPressOnBackdrop) closeAddItemModal();
+  bomPressOnBackdrop=false;
+});
 $("bm-back2").addEventListener("click",()=>{
   $("bom-stage-acc").style.display="none";
   if (bmMode==="accessory"){ $("bom-stage-type").style.display=""; }
