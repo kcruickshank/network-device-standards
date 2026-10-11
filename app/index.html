@@ -3473,9 +3473,8 @@ function openAddItemModal(){
   $("bom-stage-type").style.display="none";
   $("bom-stage-device").style.display=""; $("bom-stage-acc").style.display="none";
   $("bom-modal-h").textContent="Add device to BOM";
-  $("bm-type").innerHTML='<option value="">All types</option>'+allTypes().slice().sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"})).map(t=>`<option>${esc(t)}</option>`).join("");
-  $("bm-uc").innerHTML='<option value="">All use cases</option>'+allUseCases().slice().sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"})).map(u=>`<option>${esc(u)}</option>`).join("");
   $("bm-type").value=""; $("bm-uc").value=""; $("bm-q").value=""; $("bm-qty").value="1";
+  fillBomFilterOptions();
   $("bm-next").disabled=true;
   renderPickList();
   $("bom-modal").classList.add("open");
@@ -3523,6 +3522,22 @@ function showAccStageForModel(devId){
 $("bm-typecancel").addEventListener("click",closeAddItemModal);
 $("bm-typenext").addEventListener("click",()=>{ if($("bm-accmodel").value) showAccStageForModel($("bm-accmodel").value); });
 function closeAddItemModal(){ $("bom-modal").classList.remove("open"); }
+/* The picker only offers active devices, so build its filters from active
+   devices too - otherwise you can choose a type or use case that matches
+   nothing. Use cases cascade from the chosen type, as on the catalog. */
+function fillBomFilterOptions(){
+  const ts=$("bm-type"), us=$("bm-uc");
+  const keepT=ts.value, keepU=us.value;
+  const byName=(a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"});
+  const active=state.devices.filter(isActiveDevice);
+  const types=[...new Set(active.map(d=>d.type).filter(Boolean))].sort(byName);
+  ts.innerHTML='<option value="">All types</option>'+types.map(t=>`<option>${esc(t)}</option>`).join("");
+  ts.value=types.includes(keepT)?keepT:"";
+  const pool=ts.value?active.filter(d=>d.type===ts.value):active;
+  const ucs=[...new Set(pool.flatMap(d=>d.useCases||[]))].sort(byName);
+  us.innerHTML='<option value="">All use cases</option>'+ucs.map(u=>`<option>${esc(u)}</option>`).join("");
+  us.value=ucs.includes(keepU)?keepU:"";
+}
 function renderPickList(){
   const t=$("bm-type").value, u=$("bm-uc").value, q=$("bm-q").value.trim().toLowerCase();
   const all=state.devices.filter(d=>{
@@ -3555,7 +3570,9 @@ function renderPickList(){
     bmSelectedDevice=r.dataset.pick; renderPickList(); $("bm-next").disabled=false;
   }));
 }
-["bm-type","bm-uc"].forEach(id=>$(id).addEventListener("change",renderPickList));
+// changing the type re-scopes the use-case list before the results are redrawn
+$("bm-type").addEventListener("change",()=>{ fillBomFilterOptions(); renderPickList(); });
+$("bm-uc").addEventListener("change",renderPickList);
 $("bm-q").addEventListener("input",renderPickList);
 $("bm-cancel").addEventListener("click",closeAddItemModal);
 $("bm-cancel2").addEventListener("click",closeAddItemModal);
