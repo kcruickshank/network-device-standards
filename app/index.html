@@ -1096,15 +1096,17 @@
   <div class="bom-box">
     <h3 id="bom-modal-h">Add device to BOM</h3>
     <!-- STAGE 0: pick a device type (accessory mode only) -->
-    <div id="bom-stage-type" style="display:none">
-      <div class="sub2" style="font-size:13px;color:var(--muted);margin-bottom:12px">Filter by device type, choose a specific model, then pick its accessories. No device will be added — only the accessories you pick.</div>
-      <div class="filterbar" style="margin-bottom:6px">
-        <div class="field"><label for="bm-acctype">Device type</label><select id="bm-acctype"></select></div>
-        <div class="field grow"><label for="bm-accmodel">Device model</label><select id="bm-accmodel"></select></div>
+    <div id="bom-stage-accpick" style="display:none">
+      <div class="sub2" style="font-size:13px;color:var(--muted);margin-bottom:12px">Choose an accessory type, then tick the accessories to add and set quantities. No device will be added — only the accessories you pick.</div>
+      <div class="filterbar" style="margin-bottom:12px">
+        <div class="field"><label for="bm-acccat">Accessory type</label><select id="bm-acccat"></select></div>
+        <div class="field grow"><label for="bm-accq">Search</label><input id="bm-accq" type="search" placeholder="Accessory, part number…"></div>
       </div>
+      <div id="bm-accpicklist"></div>
+      <div class="hint" id="bm-accselnote" style="margin-top:8px"></div>
       <div class="form-actions">
-        <button class="btn primary" id="bm-typenext" disabled>Next: accessories →</button>
-        <button class="btn" id="bm-typecancel">Cancel</button>
+        <button class="btn primary" id="bm-accadd">Add to BOM</button>
+        <button class="btn" id="bm-acccancel">Cancel</button>
       </div>
     </div>
     <!-- STAGE 1: pick device -->
@@ -3470,7 +3472,7 @@ let bmMode = "device";
 function openAddItemModal(){
   if(!state.editingBomId) return;
   bmMode="device"; bmSelectedDevice=null;
-  $("bom-stage-type").style.display="none";
+  $("bom-stage-accpick").style.display="none";
   $("bom-stage-device").style.display=""; $("bom-stage-acc").style.display="none";
   $("bom-modal-h").textContent="Add device to BOM";
   $("bm-type").value=""; $("bm-uc").value=""; $("bm-q").value=""; $("bm-qty").value="1";
@@ -3482,45 +3484,67 @@ function openAddItemModal(){
 function openAddAccessoryModal(){
   if(!state.editingBomId) return;
   bmMode="accessory"; bmSelectedDevice=null;
-  $("bom-stage-type").style.display=""; $("bom-stage-device").style.display="none"; $("bom-stage-acc").style.display="none";
+  $("bom-stage-accpick").style.display=""; $("bom-stage-device").style.display="none"; $("bom-stage-acc").style.display="none";
   $("bom-modal-h").textContent="Add accessory to BOM";
-  const types=[...new Set(state.devices.map(d=>d.type).filter(Boolean))].sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
-  $("bm-acctype").innerHTML = '<option value="">All types</option>' + types.map(t=>`<option>${esc(t)}</option>`).join("");
-  $("bm-acctype").value="";
-  renderAccModelOptions();
+  bmAccSel=new Map();
+  $("bm-accq").value="";
+  fillBomAccCatOptions();
+  renderAccPickList();
   $("bom-modal").classList.add("open");
 }
-function renderAccModelOptions(){
-  const t=$("bm-acctype").value;
-  const models=state.devices.filter(d=>!t || d.type===t).slice().sort((a,b)=>a.model.localeCompare(b.model, undefined, {sensitivity:"base"}));
-  $("bm-accmodel").innerHTML = '<option value="">— Select a model —</option>' +
-    models.map(d=>`<option value="${esc(d.id)}">${esc(d.model)}${t?"":` · ${esc(d.type||"")}`}</option>`).join("");
-  $("bm-accmodel").value="";
-  $("bm-typenext").disabled=true;
+/* Accessories chosen in this dialog, kept across filter changes so narrowing the
+   list does not quietly drop something already ticked. id -> quantity. */
+let bmAccSel=new Map();
+function fillBomAccCatOptions(){
+  const sel=$("bm-acccat"), keep=sel.value;
+  const cats=[...new Set(state.accessories.map(a=>a.category).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
+  const hasUncat=state.accessories.some(a=>!a.category);
+  sel.innerHTML='<option value="">All accessory types</option>'
+    + cats.map(c=>`<option>${esc(c)}</option>`).join("")
+    + (hasUncat?'<option value="~none">Uncategorised</option>':"");
+  sel.value=[...sel.options].some(o=>o.value===keep)?keep:"";
 }
-$("bm-acctype").addEventListener("change",renderAccModelOptions);
-$("bm-accmodel").addEventListener("change",()=>{ $("bm-typenext").disabled = !$("bm-accmodel").value; });
-function accessoriesForDevice(devId){
-  return state.accessories.filter(a=>(a.deviceIds||[]).includes(devId))
-    .sort((a,b)=>(a.category||"").localeCompare(b.category||"")||a.name.localeCompare(b.name));
+function renderAccPickList(){
+  const c=$("bm-acccat").value, q=$("bm-accq").value.trim().toLowerCase();
+  const list=state.accessories.filter(a=>{
+    if(c==="~none"){ if(a.category) return false; }
+    else if(c && (a.category||"")!==c) return false;
+    if(q){ const hay=[a.name,a.partNumber||"",a.category||""].join(" ").toLowerCase(); if(!hay.includes(q)) return false; }
+    return true;
+  }).sort((a,b)=>(a.category||"").localeCompare(b.category||"")||a.name.localeCompare(b.name));
+  $("bm-accpicklist").innerHTML = list.length ? list.map(a=>{
+    const on=bmAccSel.has(a.id), qty=bmAccSel.get(a.id)||1;
+    return `<div class="acc-pick">
+      <label><input type="checkbox" data-acc="${esc(a.id)}" ${on?"checked":""}> <span>${esc(a.name)} ${a.partNumber?`<span style="font-family:var(--mono);font-size:11px;color:var(--accent-deep)">${esc(a.partNumber)}</span>`:""} <span style="color:var(--muted);font-size:11.5px">\u00b7 ${esc(a.category||"Uncategorised")}</span></span></label>
+      <span>Qty <input type="number" min="1" value="${qty}" data-accqty="${esc(a.id)}"></span>
+    </div>`;
+  }).join("") : '<div style="padding:14px;color:var(--muted)">No accessories match.</div>';
+  $("bm-accpicklist").querySelectorAll("[data-acc]").forEach(cb=>cb.addEventListener("change",()=>{
+    const id=cb.dataset.acc;
+    const qin=$("bm-accpicklist").querySelector(`[data-accqty="${CSS.escape(id)}"]`);
+    if(cb.checked) bmAccSel.set(id, Math.max(1, parseInt(qin?qin.value:"1",10)||1));
+    else bmAccSel.delete(id);
+    updateAccSelNote();
+  }));
+  $("bm-accpicklist").querySelectorAll("[data-accqty]").forEach(qin=>qin.addEventListener("input",()=>{
+    const id=qin.dataset.accqty;
+    if(bmAccSel.has(id)) bmAccSel.set(id, Math.max(1, parseInt(qin.value,10)||1));
+  }));
+  updateAccSelNote();
 }
-function showAccStageForModel(devId){
-  const d=state.devices.find(x=>x.id===devId); if(!d) return;
-  bmSelectedDevice=null; // accessory mode never adds the device
-  const accs = accessoriesForDevice(devId);
-  $("bm-acc-intro").innerHTML = accs.length
-    ? `Accessories linked to <strong>${esc(d.model)}</strong> — tick the ones to add and set quantities.`
-    : `No accessories are linked to <strong>${esc(d.model)}</strong> yet. Link accessories to this model first.`;
-  $("bm-acclist").innerHTML = accs.map(a=>
-    `<div class="acc-pick">
-      <label><input type="checkbox" data-acc="${esc(a.id)}"> <span>${esc(a.name)} ${a.partNumber?`<span style="font-family:var(--mono);font-size:11px;color:var(--accent-deep)">${esc(a.partNumber)}</span>`:""} <span style="color:var(--muted);font-size:11.5px">· ${esc(a.category||"")}</span></span></label>
-      <span>Qty <input type="number" min="1" value="1" data-accqty="${esc(a.id)}"></span>
-    </div>`).join("");
-  state._bmAccModel = d.model;
-  $("bom-stage-type").style.display="none"; $("bom-stage-device").style.display="none"; $("bom-stage-acc").style.display="";
+function updateAccSelNote(){
+  const n=bmAccSel.size;
+  const shown=new Set([...$("bm-accpicklist").querySelectorAll("[data-acc]")].map(cb=>cb.dataset.acc));
+  const hiddenPicked=[...bmAccSel.keys()].filter(id=>!shown.has(id)).length;
+  $("bm-accselnote").textContent = n
+    ? n + " accessor" + (n===1?"y":"ies") + " selected"
+      + (hiddenPicked ? " (" + hiddenPicked + " not shown under the current filter)" : "")
+    : "Nothing selected yet.";
 }
-$("bm-typecancel").addEventListener("click",closeAddItemModal);
-$("bm-typenext").addEventListener("click",()=>{ if($("bm-accmodel").value) showAccStageForModel($("bm-accmodel").value); });
+$("bm-acccat").addEventListener("change",renderAccPickList);
+$("bm-accq").addEventListener("input",renderAccPickList);
+$("bm-acccancel").addEventListener("click",closeAddItemModal);
 function closeAddItemModal(){ $("bom-modal").classList.remove("open"); }
 /* The picker only offers active devices, so build its filters from active
    devices too - otherwise you can choose a type or use case that matches
@@ -3592,8 +3616,7 @@ $("bom-modal").addEventListener("click",e=>{
 });
 $("bm-back2").addEventListener("click",()=>{
   $("bom-stage-acc").style.display="none";
-  if (bmMode==="accessory"){ $("bom-stage-type").style.display=""; }
-  else { $("bom-stage-device").style.display=""; }
+  $("bom-stage-device").style.display="";
 });
 $("bm-next").addEventListener("click",()=>{
   const d=state.devices.find(x=>x.id===bmSelectedDevice); if(!d) return;
@@ -3609,14 +3632,37 @@ $("bm-next").addEventListener("click",()=>{
     </div>`).join("");
   $("bom-stage-device").style.display="none"; $("bom-stage-acc").style.display="";
 });
+/* Add a line, merging into an existing line for the same item. */
+function bomAddLine(b,kind,ref,qty,label){
+  const ex=b.lines.find(l=>l.kind===kind && l.refId===ref.id);
+  if(ex){ ex.qty=(ex.qty||0)+qty; ex.label=label; }
+  else b.lines.push({ lid:uid(), kind, refId:ref.id, qty, label });
+}
+async function commitBomAdd(b,logDetail){
+  busy(true);
+  try {
+    await store.saveBom(b);
+    await logChange("Edited","Bill of materials",b.title||"Untitled",logDetail);
+    closeAddItemModal(); renderBomLines();
+    toast("Added to BOM.");
+  } catch(e){ toast("Failed: " + e.message); }
+  busy(false);
+}
+$("bm-accadd").addEventListener("click",async ()=>{
+  const b=state.boms.find(x=>x.id===state.editingBomId); if(!b) return;
+  if(!bmAccSel.size){ toast("Tick at least one accessory, or Cancel."); return; }
+  let added=0;
+  bmAccSel.forEach((qty,id)=>{
+    const a=state.accessories.find(x=>x.id===id); if(!a) return;
+    bomAddLine(b,"accessory",a,Math.max(1,qty||1),a.name);
+    added++;
+  });
+  await commitBomAdd(b, "Added " + added + " accessor" + (added===1?"y":"ies"));
+});
 $("bm-finish").addEventListener("click",async ()=>{
   const b=state.boms.find(x=>x.id===state.editingBomId);
   if(!b) return;
-  const addLine=(kind,ref,qty,label)=>{
-    const ex=b.lines.find(l=>l.kind===kind && l.refId===ref.id);
-    if(ex){ ex.qty=(ex.qty||0)+qty; ex.label=label; }
-    else b.lines.push({ lid:uid(), kind, refId:ref.id, qty, label });
-  };
+  const addLine=(kind,ref,qty,label)=>bomAddLine(b,kind,ref,qty,label);
   let logDetail="";
   if (bmMode==="device"){
     const d=state.devices.find(x=>x.id===bmSelectedDevice);
@@ -3632,27 +3678,8 @@ $("bm-finish").addEventListener("click",async ()=>{
       added++;
     });
     logDetail = "Added " + d.model + (added>1?" + " + (added-1) + " accessor"+(added-1===1?"y":"ies"):"");
-  } else {
-    const picked=[...$("bm-acclist").querySelectorAll("[data-acc]:checked")];
-    if(!picked.length){ toast("Tick at least one accessory, or Cancel."); return; }
-    let added=0;
-    picked.forEach(cb=>{
-      const a=state.accessories.find(x=>x.id===cb.dataset.acc); if(!a) return;
-      const qin=$("bm-acclist").querySelector(`[data-accqty="${CSS.escape(a.id)}"]`);
-      const aq=Math.max(1, parseInt(qin?qin.value:"1",10)||1);
-      addLine("accessory", a, aq, a.name);
-      added++;
-    });
-    logDetail = "Added " + added + " accessor" + (added===1?"y":"ies") + " (" + (state._bmAccModel||"") + ")";
   }
-  busy(true);
-  try {
-    await store.saveBom(b);
-    await logChange("Edited","Bill of materials",b.title||"Untitled",logDetail);
-    closeAddItemModal(); renderBomLines();
-    toast("Added to BOM.");
-  } catch(e){ toast("Failed: " + e.message); }
-  busy(false);
+  await commitBomAdd(b, logDetail);
 });
 $("bom-additem").addEventListener("click",openAddItemModal);
 $("bom-addacc").addEventListener("click",openAddAccessoryModal);
