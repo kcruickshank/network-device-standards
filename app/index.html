@@ -3315,7 +3315,14 @@ function bomOrderedLines(b){
 function lineItemDesc(l){
   let item=l.label||"", desc="";
   if(l.kind==="device"){ const d=state.devices.find(x=>x.id===l.refId); if(d){ item=d.model; desc=d.description||""; } }
-  else { const a=state.accessories.find(x=>x.id===l.refId); if(a){ item=a.name; desc=a.category||""; } }
+  else {
+    const a=state.accessories.find(x=>x.id===l.refId);
+    // Mirror devices: the orderable identifier in the item column, what the thing
+    // is in the description. A device's model is its part number; an accessory's
+    // part number is optional, so fall back to the name rather than leaving the
+    // item column blank on a quotation.
+    if(a){ item = a.partNumber || a.name; desc = a.partNumber ? a.name : (a.category||""); }
+  }
   return { item, desc };
 }
 // Quotation: addresses, no costs
