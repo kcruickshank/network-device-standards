@@ -148,6 +148,14 @@
     border:1px solid #E8C98A;border-left:3px solid var(--amber);
     border-radius:6px;padding:6px 9px;margin-top:6px;
   }
+  .rank-sel{
+    margin-left:auto;flex-shrink:0;font-family:var(--mono);font-size:11px;
+    padding:1px 4px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--ink);
+  }
+  .rank-sel[hidden]{display:none}
+  .uc.r1{border-color:var(--ok);background:#E9F6EE;color:#1F6B43;font-weight:600}
+  .uc.r2{border-color:#BFD9E9;background:#EDF6FB;color:var(--accent-deep);font-weight:600}
+  .uc.r3{border-color:var(--line);background:var(--panel-2);color:var(--muted)}
   .rec-pill.r1{background:var(--ok)}
   .rec-pill.r2{background:var(--accent)}
   .rec-pill.r3{background:var(--muted)}
@@ -456,12 +464,6 @@
           <label for="d-type">Device type *</label>
           <select id="d-type"></select>
         </div>
-        <div class="field">
-          <label for="d-rank">Choice ranking</label>
-          <select id="d-rank"></select>
-          <div class="hint">Which device to reach for within this device type. One 1st choice per type.</div>
-          <div class="rank-warn" id="d-rank-note" style="display:none"></div>
-        </div>
         <div class="field span2">
           <label for="d-desc">Description *</label>
           <input id="d-desc" placeholder="e.g. 48-port mGig UPOE access switch for high-density edge">
@@ -510,6 +512,8 @@
         <div class="field span2">
           <label>Use cases</label>
           <div class="checkgrid col-flow" id="d-usecases"></div>
+          <div class="hint" style="margin-top:6px">Rank this device against others of the same device type for each use case it serves.</div>
+          <div class="rank-warn" id="d-rank-note" style="display:none"></div>
           <div class="inline-add">
             <input id="d-uc-new" placeholder="Add a custom use case, e.g. AGV wireless backhaul">
             <button class="btn small" id="d-uc-add">Add use case</button>
@@ -1577,7 +1581,7 @@ function activeCurrency(){ return (state.meta && state.meta.currency) || "EUR"; 
 function curSymbol(){ return (CURRENCIES[activeCurrency()]||CURRENCIES.EUR).symbol; }
 function money(n){ return activeCurrency() + " " + curSymbol() + (Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function eur(n){ return money(n); }   // alias: all existing callers now follow the active currency
-const FIELD_LABELS = { model:"model", type:"device type", description:"description", notes:"notes", useCases:"use cases", rank:"choice ranking",
+const FIELD_LABELS = { model:"model", type:"device type", description:"description", notes:"notes", useCases:"use cases", useCaseRanks:"use-case ranking",
   features:"features", license:"license", ports:"port count", cost:"unit cost", costDate:"price date", version:"version", file:"image file", updated:"current review date",
   name:"name", partNumber:"part number", category:"category", deviceIds:"associated devices", title:"title", url:"URL",
   lastAvailable:"last available image" };
@@ -1827,8 +1831,10 @@ function renderCatalog(){
     // 1st, 2nd, 3rd choice inside it, with unranked devices after.
     const byType=(a.type||"").localeCompare(b.type||"");
     if (byType) return byType;
-    const ra=deviceRank(a)||99, rb=deviceRank(b)||99;
-    if (ra!==rb) return ra-rb;
+    if (u){
+      const ra=ucRank(a,u)||99, rb=ucRank(b,u)||99;
+      if (ra!==rb) return ra-rb;
+    }
     return a.model.localeCompare(b.model);
   });
 
@@ -1838,11 +1844,12 @@ function renderCatalog(){
     grid.className = "collapsed-list";
     grid.innerHTML = list.map(d=>{
       const col = typeColor(d.type);
-      const ucs = (d.useCases||[]).map(x=>`<span class="uc ${u&&x===u?"hit":""}">${esc(x)}</span>`).join("")
+      const ucs = (d.useCases||[]).map(x=>{ const r=ucRank(d,x);
+        return `<span class="uc ${u&&x===u?"hit":""} ${r?"r"+r:""}">${r?RANK_SHORT[r]+" · ":""}${esc(x)}</span>`; }).join("")
         || '<span class="none">No use cases</span>';
-      const rank = deviceRank(d);
+      const rank = u ? ucRank(d,u) : 0;
       const rowStar = rank
-        ? `<span class="rec-pill r${rank}" title="${RANK_LABELS[rank]} of ${esc(d.type||"device")}">${RANK_LABELS[rank]}</span>`
+        ? `<span class="rec-pill r${rank}" title="${RANK_LABELS[rank]} of ${esc(d.type||"device")} for &ldquo;${esc(u)}&rdquo;">${RANK_LABELS[rank]}</span>`
         : "";
       const ftList = (d.features||[]);
       const ftGroup = ftList.length
@@ -1879,13 +1886,14 @@ function renderCatalog(){
     const realPorts = Number(d.ports)>0 ? Number(d.ports) : 0;   // from the Port count field only
     const ports = Array.from({length:7},()=>`<i style="background:${col}"></i>`).join(""); // fixed decorative dots, not tied to port count
     const pLabel = realPorts ? `<span class="pcount">${realPorts}P</span>` : "";
-    const ucs = (d.useCases||[]).map(x=>`<span class="uc ${u&&x===u?"hit":""}">${esc(x)}</span>`).join("")
+    const ucs = (d.useCases||[]).map(x=>{ const r=ucRank(d,x);
+      return `<span class="uc ${u&&x===u?"hit":""} ${r?"r"+r:""}">${r?RANK_SHORT[r]+" · ":""}${esc(x)}</span>`; }).join("")
       || '<span class="none">No use cases tagged</span>';
     // The rank belongs to the device within its type, so it reads correctly
     // whether or not a use case is filtered.
-    const rank = deviceRank(d);
+    const rank = u ? ucRank(d,u) : 0;
     const prefBadge = rank
-      ? `<span class="rec-pill r${rank}" title="${RANK_LABELS[rank]} of ${esc(d.type||"device")}">${RANK_LABELS[rank]}</span>`
+      ? `<span class="rec-pill r${rank}" title="${RANK_LABELS[rank]} of ${esc(d.type||"device")} for &ldquo;${esc(u)}&rdquo;">${RANK_LABELS[rank]}</span>`
       : "";
     const fts = (d.features||[]).map(x=>`<span class="uc ft">${esc(x)}</span>`).join("");
     const accs = deviceAccessories(d.id);
@@ -2008,7 +2016,7 @@ function renderReplacementOptions(chosenId, excludeId, keepOffType){
   sel.value = list.some(d=>d.id===chosen) ? chosen : "";
 }
 // Changing the device type re-scopes the successor list to that type.
-$("d-type").addEventListener("change",()=>{ renderReplacementOptions($("d-lc-repl").value, undefined, false); renderRankOptions(); });
+$("d-type").addEventListener("change",()=>{ renderReplacementOptions($("d-lc-repl").value, undefined, false); renderUseCaseChecks([...$("d-usecases").querySelectorAll("input:checked")].map(i=>i.value), readUseCaseRanks()); });
 function toggleLifecycleFields(){
   const on = !!$("d-lifecycle").value;
   $("d-lc-date-wrap").style.display = on ? "" : "none";
@@ -2024,53 +2032,90 @@ $("d-eosup").addEventListener("change",toggleEosupDate);
    taking the device's best standing, so existing data still reads sensibly
    until the device is next saved. */
 const RANK_LABELS = {1:"1st choice", 2:"2nd choice", 3:"3rd choice"};
+const RANK_SHORT  = {1:"1st", 2:"2nd", 3:"3rd"};
 /* Active = no end-of-sale / end-of-life status, and not flagged end of support. */
 function isActiveDevice(d){
   return !((d && d.lifecycle && (d.lifecycle.status==="eos" || d.lifecycle.status==="eol")) || (d && d.endOfSupport));
 }
-function deviceRank(d){
-  if(!d) return 0;
-  const r=Number(d.rank);
+/* A device's rank within one use case: 1/2/3, or 0 if it serves the use case but
+   is not ranked for it. Ranks are unique per device type, so a use case can have
+   a 1st-choice switch and a 1st-choice AP.
+   Falls back to the device-wide rank used previously (and the star before that),
+   so existing data still reads sensibly until the device is next saved. */
+function ucRank(d,u){
+  if(!d || !u) return 0;
+  const r=Number((d.useCaseRanks||{})[u]);
   if(r===1||r===2||r===3) return r;
-  const legacy=Object.values(d.useCaseRanks||{}).map(Number).filter(n=>n===1||n===2||n===3);
-  if(legacy.length) return Math.min(...legacy);
-  if(Array.isArray(d.preferredUseCases) && d.preferredUseCases.length) return 1;
+  if(!(d.useCases||[]).includes(u)) return 0;
+  const legacy=Number(d.rank);
+  if(legacy===1||legacy===2||legacy===3) return legacy;
+  if(Array.isArray(d.preferredUseCases) && d.preferredUseCases.includes(u)) return 1;
   return 0;
 }
-/* Which device already holds a rank within a device type, ignoring the one being
-   edited (so a device is never reported as clashing with itself). */
-function rankHolder(type, rank, excludeId){
-  if(!rank) return null;
-  return state.devices.find(o=>o.id!==excludeId && (o.type||"")===(type||"") && deviceRank(o)===rank) || null;
+/* Every rank this device holds, with any fallback resolved into real entries. */
+function allUcRanks(d){
+  const out={};
+  (d.useCases||[]).forEach(u=>{ const r=ucRank(d,u); if(r) out[u]=r; });
+  return out;
 }
-/* Rebuild the ranking dropdown, naming the device each taken rank belongs to so
-   a clash is visible before it is picked rather than after saving. */
-function renderRankOptions(sel){
+/* Which other device of the same type already holds this rank for this use case. */
+function rankHolder(type,u,rank,excludeId){
+  if(!rank||!u) return null;
+  return state.devices.find(o=>o.id!==excludeId && (o.type||"")===(type||"") && ucRank(o,u)===rank) || null;
+}
+/* Clashes the current form state would cause, one per use case. */
+function rankClashes(){
   const type=$("d-type").value, ex=state.editingDeviceId;
-  const keep = sel!==undefined ? String(sel||"") : $("d-rank").value;
-  $("d-rank").innerHTML = '<option value="">— Not ranked —</option>' +
-    [1,2,3].map(r=>{
-      const h=rankHolder(type,r,ex);
-      return `<option value="${r}">${RANK_LABELS[r]}${h?" — currently "+esc(h.model):""}</option>`;
-    }).join("");
-  $("d-rank").value=keep;
-  syncRankNotice();
+  return Object.entries(readUseCaseRanks()).map(([u,r])=>{
+    const h=rankHolder(type,u,r,ex);
+    return h ? {useCase:u, rank:r, holder:h} : null;
+  }).filter(Boolean);
 }
 function syncRankNotice(){
-  const el=$("d-rank-note"), r=Number($("d-rank").value)||0;
-  const h=rankHolder($("d-type").value, r, state.editingDeviceId);
-  if(!h){ el.style.display="none"; el.textContent=""; return; }
-  el.innerHTML = `⚠ <strong>${esc(h.model)}</strong> is currently the ${RANK_LABELS[r]} `
-    + `${esc($("d-type").value||"device")}. Saving will unassign it — you'll be asked to confirm.`;
+  const el=$("d-rank-note"), cl=rankClashes();
+  if(!cl.length){ el.style.display="none"; el.innerHTML=""; return; }
+  el.innerHTML = "⚠ Saving will unassign: " + cl.map(c=>
+    `<strong>${esc(c.holder.model)}</strong> as ${RANK_LABELS[c.rank]} for &ldquo;${esc(c.useCase)}&rdquo;`
+  ).join("; ") + ". You'll be asked to confirm.";
   el.style.display="";
 }
-$("d-rank").addEventListener("change", syncRankNotice);
-function renderUseCaseChecks(selected){
+function renderUseCaseChecks(selected, ranks){
   selected = selected || [];
-  const wrap=$("d-usecases");
+  ranks = ranks || {};
+  const wrap=$("d-usecases"), type=$("d-type").value, ex=state.editingDeviceId;
   const all=[...new Set([...allUseCases(), ...selected])].slice().sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
-  wrap.innerHTML = all.map(u=>
-    `<label><input type="checkbox" value="${esc(u)}" ${selected.includes(u)?"checked":""}><span>${esc(u)}</span></label>`).join("");
+  wrap.innerHTML = all.map(u=>{
+    const on=selected.includes(u), cur=on?Number(ranks[u]||0):0;
+    // name who holds each rank for this use case, so a clash shows before it is picked
+    const opts=[0,1,2,3].map(v=>{
+      if(!v) return `<option value="" ${cur?"":"selected"}>–</option>`;
+      const h=rankHolder(type,u,v,ex);
+      return `<option value="${v}" ${cur===v?"selected":""}>${RANK_SHORT[v]}${h?" ("+esc(h.model)+")":""}</option>`;
+    }).join("");
+    return `<label><input type="checkbox" value="${esc(u)}" ${on?"checked":""}><span>${esc(u)}</span>`+
+      `<select class="rank-sel" title="Rank this device for &ldquo;${esc(u)}&rdquo;, against others of the same device type" ${on?"":"hidden"}>${opts}</select></label>`;
+  }).join("");
+  wrap.querySelectorAll("label").forEach(lab=>{
+    const cb=lab.querySelector('input[type=checkbox]'), sel=lab.querySelector('.rank-sel');
+    cb.addEventListener("change",()=>{
+      if(cb.checked) sel.hidden=false;
+      else { sel.hidden=true; sel.value=""; }
+      syncRankNotice();
+    });
+    sel.addEventListener("click",e=>e.stopPropagation());
+    sel.addEventListener("change",syncRankNotice);
+  });
+  syncRankNotice();
+}
+function readUseCaseRanks(){
+  const out={};
+  $("d-usecases").querySelectorAll("label").forEach(lab=>{
+    const cb=lab.querySelector('input[type=checkbox]'), sel=lab.querySelector('.rank-sel');
+    if(!cb || !cb.checked || !sel) return;
+    const r=Number(sel.value||0);
+    if(r===1||r===2||r===3) out[cb.value]=r;
+  });
+  return out;
 }
 // Preferred use cases currently ticked in the device form (only for checked use cases).
 function renderFeatureChecks(selected){
@@ -2097,7 +2142,6 @@ function resetDeviceForm(){
   $("device-eyebrow").textContent="New standard"; $("device-title").textContent="Add device";
   $("d-model").value=""; $("d-desc").value=""; $("d-notes").value=""; $("d-ports").value=""; $("d-cost").value=""; $("d-cost-date").value=""; $("d-uc-new").value=""; $("d-ft-new").value="";
   renderDeviceTypeOptions("");
-  renderRankOptions("");
   renderLifecycleUI(null, null, null);
   renderLicenseChecks([]);
   renderGImageOptions(null);
@@ -2117,8 +2161,7 @@ function editDevice(id){
   renderLifecycleUI(d.lifecycle, d.id, d.endOfSupport);
   renderLicenseChecks(deviceLicenses(d));
   renderGImageOptions(id);
-  renderUseCaseChecks(d.useCases||[]);
-  renderRankOptions(deviceRank(d) || "");
+  renderUseCaseChecks(d.useCases||[], allUcRanks(d));
   renderFeatureChecks(d.features||[]);
   $("d-delete").style.display="";
   switchView("device");
@@ -2155,15 +2198,15 @@ $("d-save").addEventListener("click",async ()=>{
   const portsValRaw=parseInt($("d-ports").value,10);
   if(!(Number.isFinite(portsValRaw) && portsValRaw>0)){ toast("A port count is required."); $("d-ports").focus(); return; }
   const useCases=[...$("d-usecases").querySelectorAll("input:checked")].map(i=>i.value);
-  const rank=Number($("d-rank").value)||undefined;
-  // Taking a rank off another device is a change to a record the user is not
-  // looking at, so confirm it before anything is written or created.
-  const takenFrom = rank ? rankHolder($("d-type").value, rank, state.editingDeviceId) : null;
-  if (takenFrom && !confirm(
-      RANK_LABELS[rank] + " for " + ($("d-type").value || "this device type") +
-      " is currently assigned to " + takenFrom.model + ".\n\n" +
-      "Make " + model + " the " + RANK_LABELS[rank] + " instead?\n\n" +
-      takenFrom.model + " will be left unranked.")) return;
+  const useCaseRanks=readUseCaseRanks();
+  // Taking a rank off another device changes a record the user is not looking at,
+  // so confirm it before anything is written or created.
+  const clashes=rankClashes();
+  if (clashes.length && !confirm(
+      "These rankings are currently held by other " + ($("d-type").value || "device") + "s:\n\n" +
+      clashes.map(c=>"  • " + RANK_LABELS[c.rank] + " for \u201c" + c.useCase + "\u201d - " + c.holder.model).join("\n") +
+      "\n\nGive them to " + model + " instead?\n\n" +
+      "Those devices keep the use case but lose that ranking.")) return;
   const features=[...$("d-features").querySelectorAll("input:checked")].map(i=>i.value);
   let d; const isNew = !state.editingDeviceId; let prev=null;
   if (state.editingDeviceId){ d=state.devices.find(x=>x.id===state.editingDeviceId); prev={...d, useCases:[...(d.useCases||[])], features:[...(d.features||[])]}; }
@@ -2173,23 +2216,26 @@ $("d-save").addEventListener("click",async ()=>{
   const lcStatus=$("d-lifecycle").value;
   const lifecycle = lcStatus ? { status:lcStatus, date:$("d-lc-date").value||undefined, replacementId:$("d-lc-repl").value||undefined } : undefined;
   const endOfSupport = $("d-eosup").checked ? { date:$("d-eosup-date").value||undefined } : undefined;
-  Object.assign(d,{ model, type:$("d-type").value, licenses, license:undefined, lifecycle, endOfSupport, description:desc, notes:$("d-notes").value.trim(), useCases, rank, useCaseRanks:undefined, preferredUseCases:undefined, features,
+  Object.assign(d,{ model, type:$("d-type").value, licenses, license:undefined, lifecycle, endOfSupport, description:desc, notes:$("d-notes").value.trim(), useCases, useCaseRanks, rank:undefined, preferredUseCases:undefined, features,
     ports: portsValRaw,
     cost: (Number.isFinite(costVal) && costVal>=0) ? costVal : undefined,
     costDate: $("d-cost-date").value || undefined });
-  // One device holds each rank within a device type - making this the 1st choice
-  // access switch releases it from whichever access switch held it before.
+  // One device holds each rank per use case, within a device type. Materialise the
+  // loser's other ranks so it only gives up the clashing one.
   const bumped=[];
-  if (rank){
-    state.devices.filter(o=>o.id!==d.id && (o.type||"")===(d.type||"") && deviceRank(o)===rank).forEach(o=>{
-      o.rank=undefined; o.useCaseRanks=undefined; o.preferredUseCases=undefined;
-      bumped.push(o);
-    });
-  }
+  clashes.forEach(c=>{
+    const o=c.holder;
+    const next=allUcRanks(o);
+    delete next[c.useCase];
+    o.useCaseRanks=next; o.rank=undefined; o.preferredUseCases=undefined;
+    const seen=bumped.find(x=>x.dev.id===o.id);
+    if(seen) seen.lost.push(RANK_LABELS[c.rank]+" for "+c.useCase);
+    else bumped.push({dev:o, lost:[RANK_LABELS[c.rank]+" for "+c.useCase]});
+  });
   busy(true);
   try {
     await store.saveDevice(d);
-    for (const o of bumped) await store.saveDevice(o);
+    for (const b of bumped) await store.saveDevice(b.dev);
     // sync golden image (one per device)
     const wantImg=$("d-gimage").value;
     const curImg=deviceGoldenImage(d.id);
@@ -2201,13 +2247,13 @@ $("d-save").addEventListener("click",async ()=>{
     }
     if (isNew) await logChange("Added","Device",model,(d.type||"") + (deviceLicenses(d).length?" · "+deviceLicenses(d).join(", "):"") + ((d.useCases||[]).length?" · "+(d.useCases||[]).join(", "):""));
     else {
-      const changed = diffFields(prev,d,["model","type","licenses","lifecycle","endOfSupport","ports","cost","costDate","description","notes","useCases","rank","features"]);
+      const changed = diffFields(prev,d,["model","type","licenses","lifecycle","endOfSupport","ports","cost","costDate","description","notes","useCases","useCaseRanks","features"]);
       if (imgChanged) changed.push("golden image");
       await logChange("Edited","Device",model, changed.length ? "Changed: " + changed.join(", ") : "No field changes");
     }
     if (bumped.length){
-      for (const o of bumped) await logChange("Edited","Device",o.model,"No longer "+RANK_LABELS[rank]+" "+(d.type||"device")+" - replaced by "+model);
-      toast("Saved " + model + ". " + bumped.map(o=>o.model).join(", ") + " no longer " + RANK_LABELS[rank] + ".");
+      for (const b of bumped) await logChange("Edited","Device",b.dev.model,"Lost "+b.lost.join(", ")+" to "+model);
+      toast("Saved " + model + ". " + bumped.map(b=>b.dev.model+" lost "+b.lost.join(" / ")).join("; ") + ".");
     } else toast("Saved " + model + ".");
     resetDeviceForm(); switchView("catalog"); renderCatalog();
   } catch(e){ reportSaveError(e,"Save failed"); }
@@ -2994,7 +3040,12 @@ async function renameUseCase(oldName){
   try {
     state.meta.useCases = state.meta.useCases.map(u=>u===oldName?nv:u);
     const touched = state.devices.filter(d=>(d.useCases||[]).includes(oldName));
-    touched.forEach(d=>{ d.useCases=d.useCases.map(u=>u===oldName?nv:u); });
+    touched.forEach(d=>{
+      const r=allUcRanks(d);                 // resolve any fallback before the key moves
+      d.useCases=d.useCases.map(u=>u===oldName?nv:u);
+      if(r[oldName]){ r[nv]=r[oldName]; delete r[oldName]; }
+      d.useCaseRanks=r; d.rank=undefined; d.preferredUseCases=undefined;
+    });
     await store.saveMeta();
     for (const d of touched) await store.saveDevice(d);
     await logChange("Renamed","Use case",oldName,'Now "' + nv + '"' + (touched.length?" · " + touched.length + " device" + (touched.length===1?"":"s") + " updated":""));
@@ -3014,7 +3065,12 @@ async function deleteUseCase(u){
   try {
     state.meta.useCases = state.meta.useCases.filter(x=>x!==u);
     const touched = state.devices.filter(d=>(d.useCases||[]).includes(u));
-    touched.forEach(d=>{ d.useCases=d.useCases.filter(x=>x!==u); });
+    touched.forEach(d=>{
+      const r=allUcRanks(d);
+      d.useCases=d.useCases.filter(x=>x!==u);
+      delete r[u];
+      d.useCaseRanks=r; d.rank=undefined; d.preferredUseCases=undefined;
+    });
     await store.saveMeta();
     for (const d of touched) await store.saveDevice(d);
     await logChange("Deleted","Use case",u,touched.length?"Removed from " + touched.length + " device" + (touched.length===1?"":"s"):"");
@@ -3581,11 +3637,11 @@ function renderPickList(){
   // end of support should not reach a new bill of materials.
   const list=all.filter(isActiveDevice)
     .sort((a,b)=>(a.type||"").localeCompare(b.type||"")
-      || ((deviceRank(a)||99)-(deviceRank(b)||99))
+      || ((u?ucRank(a,u):0||99)-(u?ucRank(b,u):0||99))
       || a.model.localeCompare(b.model));
   const hidden=all.length-list.length;
   $("bm-picklist").innerHTML = list.length ? list.map(d=>{
-    const col=typeColor(d.type), sel=bmSelectedDevice===d.id, r=deviceRank(d);
+    const col=typeColor(d.type), sel=bmSelectedDevice===d.id, r=u?ucRank(d,u):0;
     return `<div class="pick-row ${sel?"sel":""}" data-pick="${d.id}">
       <span class="pr-type" style="background:${col}">${esc(d.type||"Untyped")}</span>
       <strong>${esc(d.model)}</strong>
