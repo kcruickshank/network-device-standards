@@ -622,7 +622,7 @@
           <input id="a-name" placeholder="e.g. 8x10G network module">
         </div>
         <div class="field">
-          <label for="a-cat">Category</label>
+          <label for="a-cat">Category *</label>
           <select id="a-cat"></select>
         </div>
         <div class="field">
@@ -2469,7 +2469,9 @@ function renderAccCatOptions(sel){
   const cats = allAccCategories();
   if (sel && !cats.includes(sel)) cats.push(sel);
   cats.sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
-  $("a-cat").innerHTML = cats.map(c=>`<option ${c===sel?"selected":""}>${esc(c)}</option>`).join("");
+  const opts = cats.map(c=>`<option ${c===sel?"selected":""}>${esc(c)}</option>`).join("");
+  $("a-cat").innerHTML = '<option value="" ' + (sel?"":"selected") + ' disabled>Select Category</option>' + opts;
+  $("a-cat").value = sel || "";
 }
 function renderAccDeviceChecks(selectedIds){
   const wrap=$("a-devs"); const sel=selectedIds||[];
@@ -2496,7 +2498,7 @@ $("a-devs-none").addEventListener("click",()=>setAccDevChecks(false));
 function resetAccForm(){
   state.editingAccId=null;
   $("a-name").value=""; $("a-pn").value=""; $("a-cost").value=""; $("a-cost-date").value="";
-  renderAccCatOptions(ACC_CATEGORIES[0]);
+  renderAccCatOptions("");
   renderAccDeviceChecks([]);
   $("a-save").textContent="Save accessory"; $("a-cancel").style.display="none";
 }
@@ -2577,7 +2579,7 @@ function renderAccTable(){
     state.editingAccId=a.id;
     $("a-name").value=a.name; $("a-pn").value=a.partNumber||"";
     $("a-cost").value=(a.cost!=null?a.cost:""); $("a-cost-date").value=a.costDate||"";
-    renderAccCatOptions(a.category||ACC_CATEGORIES[0]);
+    renderAccCatOptions(a.category||"");
     renderAccDeviceChecks(a.deviceIds||[]);
     $("a-save").textContent="Update accessory"; $("a-cancel").style.display="";
     window.scrollTo({top:0});
@@ -2608,12 +2610,14 @@ $("a-save").addEventListener("click",async ()=>{
   if(clash){ toast("Part number " + partNumber + " is already used by \u201c" + clash.name + "\u201d."); $("a-pn").focus(); $("a-pn").select(); return; }
   const name=$("a-name").value.trim();
   if(!name){ toast("A description is required."); $("a-name").focus(); return; }
+  const category=$("a-cat").value;
+  if(!category){ toast("A category is required."); $("a-cat").focus(); return; }
   const deviceIds=[...$("a-devs").querySelectorAll("input:checked")].map(i=>i.value);
   let a; const isNew=!state.editingAccId; let prev=null;
   if(state.editingAccId){ a=state.accessories.find(x=>x.id===state.editingAccId); prev={...a, deviceIds:[...(a.deviceIds||[])]}; }
   else { a={ id:uid() }; state.accessories.push(a); }
   const aCostVal = parseFloat($("a-cost").value);
-  Object.assign(a,{ name, partNumber, category:$("a-cat").value, deviceIds,
+  Object.assign(a,{ name, partNumber, category, deviceIds,
     cost: (Number.isFinite(aCostVal) && aCostVal>=0) ? aCostVal : undefined,
     costDate: $("a-cost-date").value || undefined });
   busy(true);
@@ -4406,7 +4410,7 @@ $("btn-wipe").addEventListener("click",async ()=>{
 (async function init(){
   renderDeviceTypeOptions("");
   renderUseCaseChecks([]);
-  renderAccCatOptions(ACC_CATEGORIES[0]); renderAccDeviceChecks([]);
+  renderAccCatOptions(""); renderAccDeviceChecks([]);
   renderLinkCatOptions(LINK_CATEGORIES[0]); renderLinkDeviceChecks([]);
   renderLicenseChecks([]); renderFeatureChecks([]);
   $("g-updated").value=todayISO(); syncNextReview(); renderGImageOptions(null); renderImageDeviceChecks([]);
