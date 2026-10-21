@@ -1837,34 +1837,54 @@ const catFilter={ features:new Set(), models:new Set() };
 function fillFilterOptions(){
   const ft=$("f-type"), fu=$("f-uc");
   const keepT=ft.value, keepU=fu.value;
-  ft.innerHTML = '<option value="">All types</option>' + allTypes().slice().sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"})).map(t=>`<option>${esc(t)}</option>`).join("");
-  ft.value=keepT;
-  // Filters narrow in order: device type decides the use cases on offer, then
-  // type and use case together decide everything else, so no option on any
-  // filter can come back empty.
-  const byType = typeScope();
-  const ucOptions = (ft.value
-      ? [...new Set(byType.flatMap(d=>d.useCases||[]))]
-      : allUseCases())
+  const typeOptions=[...new Set(catMatches("type").map(d=>d.type).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
+  ft.innerHTML = '<option value="">All types</option>' + typeOptions.map(t=>`<option>${esc(t)}</option>`).join("");
+  ft.value = typeOptions.includes(keepT) ? keepT : "";
+  // Each filter lists only what the others leave reachable, so no option on any
+  // filter can come back empty. A filter never constrains itself, or picking a
+  // value would remove every alternative to it.
+  const ucOptions = [...new Set(catMatches("uc").flatMap(d=>d.useCases||[]))]
     .sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
   fu.innerHTML = '<option value="">All use cases</option>' + ucOptions.map(u=>`<option>${esc(u)}</option>`).join("");
   fu.value = ucOptions.includes(keepU) ? keepU : "";
-  const scope = filterScope();   // reads the use case just resolved above
-  fillLifecycleOptions(scope);
-  fillPortOptions(scope);
-  renderFeatureFilterMenu(scope);
+  fillLifecycleOptions(catMatches("lc"));
+  fillPortOptions(catMatches("ports"));
+  renderFeatureFilterMenu();
   renderModelChips();
 }
-/* Devices of the chosen type - what the use-case list is built from. */
-function typeScope(){
-  const t=$("f-type").value;
-  return t ? state.devices.filter(d=>d.type===t) : state.devices;
+/* Everything the catalog search box looks at. */
+function deviceHaystack(d){
+  const accs = deviceAccessories(d.id).map(a=>a.name+" "+(a.partNumber||"")).join(" ");
+  const lnks = deviceLinks(d.id).map(l=>l.title+" "+(l.url||"")).join(" ");
+  const gi = deviceGoldenImage(d.id);
+  return [d.model,d.type,deviceLicenses(d).join(" "),gi?gi.version+" "+(gi.file||""):"",
+          d.description,d.notes,(d.useCases||[]).join(" "),(d.features||[]).join(" "),accs,lnks]
+         .join(" ").toLowerCase();
 }
-/* Devices matching both type and use case - what every remaining filter
-   (lifecycle, ports, features, models) is built from. */
-function filterScope(){
-  const u=$("f-uc").value, base=typeScope();
-  return u ? base.filter(d=>(d.useCases||[]).includes(u)) : base;
+/* Devices passing every active filter, optionally ignoring one of them.
+   Each filter's own options are built while ignoring itself, so whatever it
+   offers is guaranteed to return something once chosen. */
+function catMatches(except){
+  const t=$("f-type").value, u=$("f-uc").value, lcF=$("f-lc").value;
+  const portF=$("f-ports").value, q=$("f-q").value.trim().toLowerCase();
+  return state.devices.filter(d=>{
+    if (except!=="type" && t && d.type!==t) return false;
+    if (except!=="uc" && u && !(d.useCases||[]).includes(u)) return false;
+    if (except!=="lc"){
+      if (lcF==="active" && !isActiveDevice(d)) return false;
+      if (lcF==="eos" && !(d.lifecycle && d.lifecycle.status==="eos")) return false;
+      if (lcF==="eol" && !(d.lifecycle && d.lifecycle.status==="eol")) return false;
+      if (lcF==="eosup" && !d.endOfSupport) return false;
+    }
+    if (except!=="ports" && portF && Number(d.ports)!==Number(portF)) return false;
+    // features are ANDed: the device must have every feature ticked
+    if (except!=="features" && catFilter.features.size
+        && ![...catFilter.features].every(f=>(d.features||[]).includes(f))) return false;
+    if (except!=="models" && catFilter.models.size && !catFilter.models.has(d.model)) return false;
+    if (q && !deviceHaystack(d).includes(q)) return false;
+    return true;
+  });
 }
 function fillLifecycleOptions(scope){
   const sel=$("f-lc"), keep=sel.value;
@@ -1886,12 +1906,15 @@ function fillPortOptions(scope){
   sel.innerHTML='<option value="">Any ports</option>'+ports.map(n=>`<option value="${n}">${n} ports</option>`).join("");
   sel.value=ports.map(String).includes(keep)?keep:"";
 }
-function renderFeatureFilterMenu(scope){
+function renderFeatureFilterMenu(){
   const menu=$("f-ft-menu");
-  const feats=[...new Set(scope.flatMap(d=>d.features||[]))]
+  // Features are ANDed, so offer only those present on devices that already
+  // match everything - ticking another is then guaranteed to leave a result.
+  // Ticked features stay listed even if the set empties, so they can be undone.
+  const feats=[...new Set([...catMatches(null).flatMap(d=>d.features||[]), ...catFilter.features])]
     .sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
-  // a feature the chosen type does not have can no longer be selected
-  [...catFilter.features].forEach(f=>{ if(!feats.includes(f)) catFilter.features.delete(f); });
+  const reachable=new Set(catMatches("features").flatMap(d=>d.features||[]));
+  [...catFilter.features].forEach(f=>{ if(!reachable.has(f)) catFilter.features.delete(f); });
   menu.innerHTML = feats.length
     ? feats.map(f=>`<label><input type="checkbox" value="${esc(f)}" ${catFilter.features.has(f)?"checked":""}><span>${esc(f)}</span></label>`).join("")
     : '<span class="none">No features recorded for these devices.</span>';
@@ -1907,7 +1930,9 @@ function renderFeatureFilterMenu(scope){
 function renderModelMenu(){
   const q=$("f-model-in").value.trim().toLowerCase();
   const menu=$("f-model-menu");
-  const models=filterScope().map(d=>d.model).filter(Boolean)
+  // Models are ORed, so adding one can only widen the result: offer every model
+  // reachable once the model filter itself is set aside.
+  const models=catMatches("models").map(d=>d.model).filter(Boolean)
     .filter(m=>!q || m.toLowerCase().includes(q))
     .sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
   menu.innerHTML = models.length
@@ -1921,8 +1946,8 @@ function renderModelMenu(){
 }
 function renderModelChips(){
   const wrap=$("f-model-chips");
-  const inScope=new Set(filterScope().map(d=>d.model));
-  [...catFilter.models].forEach(m=>{ if(!inScope.has(m)) catFilter.models.delete(m); });
+  const reachable=new Set(catMatches("models").map(d=>d.model));
+  [...catFilter.models].forEach(m=>{ if(!reachable.has(m)) catFilter.models.delete(m); });
   wrap.innerHTML=[...catFilter.models].sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}))
     .map(m=>`<span class="chip">${esc(m)}<button type="button" data-unpick="${esc(m)}" title="Remove ${esc(m)}" aria-label="Remove ${esc(m)}">×</button></span>`).join("");
   wrap.querySelectorAll("[data-unpick]").forEach(b=>b.addEventListener("click",()=>{
@@ -1937,28 +1962,8 @@ function deviceAccessories(devId){
 }
 function renderCatalog(){
   fillFilterOptions();
-  const t=$("f-type").value, u=$("f-uc").value, lcF=$("f-lc").value, q=$("f-q").value.trim().toLowerCase();
-  const portF=$("f-ports").value;
-  const list = state.devices.filter(d=>{
-    if (t && d.type!==t) return false;
-    if (u && !(d.useCases||[]).includes(u)) return false;
-    if (lcF==="active" && !isActiveDevice(d)) return false;
-    if (lcF==="eos" && !(d.lifecycle && d.lifecycle.status==="eos")) return false;
-    if (lcF==="eol" && !(d.lifecycle && d.lifecycle.status==="eol")) return false;
-    if (lcF==="eosup" && !d.endOfSupport) return false;
-    if (portF && Number(d.ports)!==Number(portF)) return false;
-    // features are ANDed: the device must have every feature ticked
-    if (catFilter.features.size && ![...catFilter.features].every(f=>(d.features||[]).includes(f))) return false;
-    if (catFilter.models.size && !catFilter.models.has(d.model)) return false;
-    if (q) {
-      const accs = deviceAccessories(d.id).map(a=>a.name+" "+(a.partNumber||"")).join(" ");
-      const lnks = deviceLinks(d.id).map(l=>l.title+" "+(l.url||"")).join(" ");
-      const gi = deviceGoldenImage(d.id);
-      const hay = [d.model,d.type,deviceLicenses(d).join(" "),gi?gi.version+" "+(gi.file||""):"",d.description,d.notes,(d.useCases||[]).join(" "),(d.features||[]).join(" "),accs,lnks].join(" ").toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
-  }).sort((a,b)=>{
+  const u=$("f-uc").value;
+  const list = catMatches(null).sort((a,b)=>{
     // When filtering by a use case there is a definite recommended device, so
     // float it to the front - being first beats any amount of styling.
     // Ranks live within a device type, so group by type first, then order
