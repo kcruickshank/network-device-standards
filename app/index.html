@@ -660,7 +660,7 @@
       <span class="count-pill" id="af-count"></span>
     </div>
     <table aria-label="Accessory list">
-      <thead><tr><th>Description</th><th>Part number</th><th style="width:120px">Unit cost</th><th>Used with</th><th style="width:150px"></th></tr></thead>
+      <thead><tr><th style="width:190px">Part number</th><th>Description</th><th style="width:120px">Unit cost</th><th>Used with</th><th style="width:150px"></th></tr></thead>
       <tbody id="acc-table"></tbody>
     </table>
     <div id="acc-empty" class="empty" style="display:none;margin-top:14px">
@@ -2503,12 +2503,20 @@ function fillAccFilterOptions(){
   // keep the current choice only if it still exists
   sel.value=[...sel.options].some(o=>o.value===keep)?keep:"";
 }
+/* Order by part number - the identifier the list now leads with. Anything saved
+   before the part number was mandatory sorts last rather than first. */
+function byAccPartNumber(a,b){
+  const pa=(a.partNumber||"").trim(), pb=(b.partNumber||"").trim();
+  if(!pa!==!pb) return pa?-1:1;
+  return pa.localeCompare(pb, undefined, {sensitivity:"base", numeric:true})
+      || (a.name||"").localeCompare(b.name||"", undefined, {sensitivity:"base"});
+}
 function renderAccTable(){
   const tb=$("acc-table");
   const total=state.accessories.length;
   fillAccFilterOptions();
   const cf=$("af-cat").value, q=$("af-q").value.trim().toLowerCase();
-  const rows=state.accessories.slice().sort((a,b)=>a.name.localeCompare(b.name))
+  const rows=state.accessories.slice().sort(byAccPartNumber)
     .filter(a=>{
       if (cf==="~none"){ if(a.category) return false; }
       else if (cf && (a.category||"")!==cf) return false;
@@ -2541,8 +2549,8 @@ function renderAccTable(){
       ? `<span class="cost">${eur(Number(a.cost))}</span>${a.costDate?`<div class="csub" style="font-family:var(--mono);font-size:10px;color:#7FB08C">${esc(fmtDate(a.costDate))}</div>`:""}`
       : '<span class="none">—</span>';
     return `<tr>
-      <td>${esc(a.name)}</td>
       <td><span class="pn">${esc(a.partNumber||"—")}</span></td>
+      <td>${esc(a.name)}</td>
       <td>${costCell}</td>
       <td>${devs}</td>
       <td><button class="btn small" data-aedit="${a.id}">Edit</button>
@@ -2587,6 +2595,9 @@ $("a-cancel").addEventListener("click",resetAccForm);
 $("a-save").addEventListener("click",async ()=>{
   const partNumber=$("a-pn").value.trim();
   if(!partNumber){ toast("A part number is required."); $("a-pn").focus(); return; }
+  const clash=state.accessories.find(x=>x.id!==state.editingAccId
+    && (x.partNumber||"").trim().toLowerCase()===partNumber.toLowerCase());
+  if(clash){ toast("Part number " + partNumber + " is already used by \u201c" + clash.name + "\u201d."); $("a-pn").focus(); $("a-pn").select(); return; }
   const name=$("a-name").value.trim();
   if(!name){ toast("A description is required."); $("a-name").focus(); return; }
   const deviceIds=[...$("a-devs").querySelectorAll("input:checked")].map(i=>i.value);
