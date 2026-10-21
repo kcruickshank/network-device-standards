@@ -2366,6 +2366,14 @@ $("d-cancel").addEventListener("click",()=>{ resetDeviceForm(); switchView("cata
 $("d-save").addEventListener("click",async ()=>{
   const model=$("d-model").value.trim();
   if(!model){ toast("A model / part number is required."); $("d-model").focus(); return; }
+  // the model is the device's part number, so it has to identify one device only
+  const dupe=state.devices.find(x=>x.id!==state.editingDeviceId
+    && (x.model||"").trim().toLowerCase()===model.toLowerCase());
+  if(dupe){
+    toast("Duplicate part number: " + model + " is already in the catalog"
+      + (dupe.type?" (" + dupe.type + ")":"") + ". Edit that device instead.");
+    $("d-model").focus(); $("d-model").select(); return;
+  }
   const desc=$("d-desc").value.trim();
   if(!desc){ toast("A description is required."); $("d-desc").focus(); return; }
   if(!$("d-type").value){ toast("A device type is required."); $("d-type").focus(); return; }
