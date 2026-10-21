@@ -1839,24 +1839,32 @@ function fillFilterOptions(){
   const keepT=ft.value, keepU=fu.value;
   ft.innerHTML = '<option value="">All types</option>' + allTypes().slice().sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"})).map(t=>`<option>${esc(t)}</option>`).join("");
   ft.value=keepT;
-  // Every other filter offers only what the chosen device type actually has, so
-  // no combination of filters can come back empty.
-  const scope = filterScope();
+  // Filters narrow in order: device type decides the use cases on offer, then
+  // type and use case together decide everything else, so no option on any
+  // filter can come back empty.
+  const byType = typeScope();
   const ucOptions = (ft.value
-      ? [...new Set(scope.flatMap(d=>d.useCases||[]))]
+      ? [...new Set(byType.flatMap(d=>d.useCases||[]))]
       : allUseCases())
     .sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
   fu.innerHTML = '<option value="">All use cases</option>' + ucOptions.map(u=>`<option>${esc(u)}</option>`).join("");
   fu.value = ucOptions.includes(keepU) ? keepU : "";
+  const scope = filterScope();   // reads the use case just resolved above
   fillLifecycleOptions(scope);
   fillPortOptions(scope);
   renderFeatureFilterMenu(scope);
   renderModelChips();
 }
-/* The devices the non-type filters describe: everything, or just the chosen type. */
-function filterScope(){
+/* Devices of the chosen type - what the use-case list is built from. */
+function typeScope(){
   const t=$("f-type").value;
   return t ? state.devices.filter(d=>d.type===t) : state.devices;
+}
+/* Devices matching both type and use case - what every remaining filter
+   (lifecycle, ports, features, models) is built from. */
+function filterScope(){
+  const u=$("f-uc").value, base=typeScope();
+  return u ? base.filter(d=>(d.useCases||[]).includes(u)) : base;
 }
 function fillLifecycleOptions(scope){
   const sel=$("f-lc"), keep=sel.value;
