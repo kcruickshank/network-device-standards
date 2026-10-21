@@ -77,6 +77,13 @@
     padding:14px 16px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;
   }
   .field{display:flex;flex-direction:column;gap:5px;min-width:160px;flex:1}
+  /* A native select renders a couple of pixels taller than an input, which shows
+     as soon as they share a row. Pin every filter control to one height so the
+     labels and boxes line up. */
+  .filterbar .field > select,
+  .filterbar .field > input,
+  .filterbar .field .multi-btn,
+  .filterbar .field .multi > input{ height:39px }
   .field.grow{flex:2;min-width:220px}
   .field label{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
   .field input,.field select,.field textarea{
@@ -151,8 +158,8 @@
   /* compact multi-select: a button or input that drops a tick list */
   .multi{position:relative}
   .multi-btn{
-    width:100%;text-align:left;font-family:inherit;font-size:14px;color:var(--ink);
-    background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:9px 26px 9px 11px;cursor:pointer;
+    width:100%;text-align:left;font-family:inherit;font-size:14px;line-height:normal;color:var(--ink);
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 26px 8px 10px;cursor:pointer;
   }
   .multi-btn::after{content:"▾";position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px}
   .multi-btn.on{border-color:var(--accent);color:var(--accent-deep);font-weight:600}
@@ -168,7 +175,8 @@
   }
   .multi-menu label:hover{background:var(--panel-2)}
   .multi-menu .none{padding:6px;display:block}
-  .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+  .chips{display:flex;flex-wrap:wrap;gap:4px;flex:0 0 100%;margin:0}
+  .chips:empty{display:none}
   .chip{
     display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;
     background:#EDF6FB;border:1px solid #BFD9E9;color:var(--accent-deep);border-radius:99px;padding:2px 4px 2px 8px;
@@ -476,7 +484,6 @@
           <input id="f-model-in" type="search" autocomplete="off" placeholder="Type to narrow, click to pick…">
           <div class="multi-menu" id="f-model-menu" role="listbox" aria-label="Matching models"></div>
         </div>
-        <div class="chips" id="f-model-chips"></div>
       </div>
       <div class="field grow">
         <label for="f-q">Search</label>
@@ -488,6 +495,7 @@
         <button class="btn small" id="view-collapsed" style="border-top-left-radius:0;border-bottom-left-radius:0;border-left:none">Collapsed view</button>
       </span>
       <span class="count-pill" id="f-count"></span>
+      <div class="chips" id="f-model-chips" aria-label="Selected models"></div>
     </div>
     <div id="catalog-grid" class="grid"></div>
     <div id="catalog-empty" class="empty" style="display:none">
