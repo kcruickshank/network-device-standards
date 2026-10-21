@@ -614,12 +614,12 @@
     <div class="panel" style="max-width:none;margin-bottom:20px">
       <div class="form-grid">
         <div class="field">
-          <label for="a-name">Accessory name *</label>
-          <input id="a-name" placeholder="e.g. 8x10G network module">
+          <label for="a-pn">Part number *</label>
+          <input id="a-pn" placeholder="e.g. C9300-NM-8X">
         </div>
         <div class="field">
-          <label for="a-pn">Part number</label>
-          <input id="a-pn" placeholder="e.g. C9300-NM-8X">
+          <label for="a-name">Description *</label>
+          <input id="a-name" placeholder="e.g. 8x10G network module">
         </div>
         <div class="field">
           <label for="a-cat">Category</label>
@@ -660,7 +660,7 @@
       <span class="count-pill" id="af-count"></span>
     </div>
     <table aria-label="Accessory list">
-      <thead><tr><th>Accessory</th><th>Part number</th><th style="width:120px">Unit cost</th><th>Used with</th><th style="width:150px"></th></tr></thead>
+      <thead><tr><th>Description</th><th>Part number</th><th style="width:120px">Unit cost</th><th>Used with</th><th style="width:150px"></th></tr></thead>
       <tbody id="acc-table"></tbody>
     </table>
     <div id="acc-empty" class="empty" style="display:none;margin-top:14px">
@@ -1637,7 +1637,7 @@ function money(n){ return activeCurrency() + " " + curSymbol() + (Number(n)||0).
 function eur(n){ return money(n); }   // alias: all existing callers now follow the active currency
 const FIELD_LABELS = { model:"model", type:"device type", description:"description", notes:"notes", useCases:"use cases", useCaseRanks:"use-case ranking",
   features:"features", license:"license", ports:"port count", cost:"unit cost", costDate:"price date", version:"version", file:"image file", updated:"current review date",
-  name:"name", partNumber:"part number", category:"category", deviceIds:"associated devices", title:"title", url:"URL",
+  name:"description", partNumber:"part number", category:"category", deviceIds:"associated devices", title:"title", url:"URL",
   lastAvailable:"last available image" };
 function diffFields(prev, next, fields){
   return fields.filter(f=>JSON.stringify(prev[f]??null)!==JSON.stringify(next[f]??null)).map(f=>FIELD_LABELS[f]||f);
@@ -2585,14 +2585,16 @@ $("af-q").addEventListener("input",renderAccTable);
 $("af-clear").addEventListener("click",()=>{ $("af-cat").value=""; $("af-q").value=""; renderAccTable(); });
 $("a-cancel").addEventListener("click",resetAccForm);
 $("a-save").addEventListener("click",async ()=>{
+  const partNumber=$("a-pn").value.trim();
+  if(!partNumber){ toast("A part number is required."); $("a-pn").focus(); return; }
   const name=$("a-name").value.trim();
-  if(!name){ toast("An accessory name is required."); $("a-name").focus(); return; }
+  if(!name){ toast("A description is required."); $("a-name").focus(); return; }
   const deviceIds=[...$("a-devs").querySelectorAll("input:checked")].map(i=>i.value);
   let a; const isNew=!state.editingAccId; let prev=null;
   if(state.editingAccId){ a=state.accessories.find(x=>x.id===state.editingAccId); prev={...a, deviceIds:[...(a.deviceIds||[])]}; }
   else { a={ id:uid() }; state.accessories.push(a); }
   const aCostVal = parseFloat($("a-cost").value);
-  Object.assign(a,{ name, partNumber:$("a-pn").value.trim(), category:$("a-cat").value, deviceIds,
+  Object.assign(a,{ name, partNumber, category:$("a-cat").value, deviceIds,
     cost: (Number.isFinite(aCostVal) && aCostVal>=0) ? aCostVal : undefined,
     costDate: $("a-cost-date").value || undefined });
   busy(true);
