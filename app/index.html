@@ -148,6 +148,33 @@
     border:1px solid #E8C98A;border-left:3px solid var(--amber);
     border-radius:6px;padding:6px 9px;margin-top:6px;
   }
+  /* compact multi-select: a button or input that drops a tick list */
+  .multi{position:relative}
+  .multi-btn{
+    width:100%;text-align:left;font-family:inherit;font-size:14px;color:var(--ink);
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:9px 26px 9px 11px;cursor:pointer;
+  }
+  .multi-btn::after{content:"▾";position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px}
+  .multi-btn.on{border-color:var(--accent);color:var(--accent-deep);font-weight:600}
+  .multi-menu{
+    display:none;position:absolute;z-index:60;top:calc(100% + 4px);left:0;min-width:100%;max-width:340px;
+    max-height:240px;overflow:auto;background:var(--panel);border:1px solid var(--line);
+    border-radius:8px;box-shadow:0 10px 24px rgba(8,16,26,.18);padding:6px;
+  }
+  .multi-menu.open{display:block}
+  .multi-menu label{
+    display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:4px 6px;border-radius:5px;cursor:pointer;
+    text-transform:none;letter-spacing:0;font-family:var(--sans);color:var(--ink);white-space:normal;
+  }
+  .multi-menu label:hover{background:var(--panel-2)}
+  .multi-menu .none{padding:6px;display:block}
+  .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+  .chip{
+    display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;
+    background:#EDF6FB;border:1px solid #BFD9E9;color:var(--accent-deep);border-radius:99px;padding:2px 4px 2px 8px;
+  }
+  .chip button{background:none;border:0;cursor:pointer;color:var(--accent-deep);font-size:13px;line-height:1;padding:0 3px}
+  .chip button:hover{color:var(--danger)}
   .rank-sel{
     margin-left:auto;flex-shrink:0;font-family:var(--mono);font-size:11px;
     padding:1px 4px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--ink);
@@ -431,6 +458,25 @@
           <option value="eol">End of Life</option>
           <option value="eosup">End of Support</option>
         </select>
+      </div>
+      <div class="field" style="min-width:130px;flex:0 0 130px">
+        <label for="f-ports">Ports</label>
+        <select id="f-ports"><option value="">Any ports</option></select>
+      </div>
+      <div class="field" style="min-width:170px">
+        <label for="f-ft-btn">Features</label>
+        <div class="multi" id="f-ft-wrap">
+          <button type="button" class="multi-btn" id="f-ft-btn" aria-expanded="false">All features</button>
+          <div class="multi-menu" id="f-ft-menu" role="group" aria-label="Filter by features"></div>
+        </div>
+      </div>
+      <div class="field" style="min-width:210px">
+        <label for="f-model-in">Model / part number</label>
+        <div class="multi" id="f-model-wrap">
+          <input id="f-model-in" type="search" autocomplete="off" placeholder="Type to narrow, click to pick…">
+          <div class="multi-menu" id="f-model-menu" role="listbox" aria-label="Matching models"></div>
+        </div>
+        <div class="chips" id="f-model-chips"></div>
       </div>
       <div class="field grow">
         <label for="f-q">Search</label>
@@ -1785,6 +1831,9 @@ $("cat-head-save").addEventListener("click",async ()=>{
 }));
 
 /* ---------------- Catalog ---------------- */
+/* Multi-select filter state. Held here rather than read from the DOM so it
+   survives the dropdowns being rebuilt as the catalog re-renders. */
+const catFilter={ features:new Set(), models:new Set() };
 function fillFilterOptions(){
   const ft=$("f-type"), fu=$("f-uc");
   const keepT=ft.value, keepU=fu.value;
@@ -1801,6 +1850,59 @@ function fillFilterOptions(){
   ucOptions.sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
   fu.innerHTML = '<option value="">All use cases</option>' + ucOptions.map(u=>`<option>${esc(u)}</option>`).join("");
   fu.value = ucOptions.includes(keepU) ? keepU : "";
+  fillPortOptions();
+  renderFeatureFilterMenu();
+  renderModelChips();
+}
+/* Port counts actually present, so the list has no dead options. */
+function fillPortOptions(){
+  const sel=$("f-ports"), keep=sel.value;
+  const ports=[...new Set(state.devices.map(d=>Number(d.ports)).filter(n=>Number.isFinite(n)&&n>0))].sort((a,b)=>a-b);
+  sel.innerHTML='<option value="">Any ports</option>'+ports.map(n=>`<option value="${n}">${n} ports</option>`).join("");
+  sel.value=ports.map(String).includes(keep)?keep:"";
+}
+function renderFeatureFilterMenu(){
+  const menu=$("f-ft-menu");
+  const feats=[...new Set(state.devices.flatMap(d=>d.features||[]))]
+    .sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
+  // drop selections for features no device has any more
+  [...catFilter.features].forEach(f=>{ if(!feats.includes(f)) catFilter.features.delete(f); });
+  menu.innerHTML = feats.length
+    ? feats.map(f=>`<label><input type="checkbox" value="${esc(f)}" ${catFilter.features.has(f)?"checked":""}><span>${esc(f)}</span></label>`).join("")
+    : '<span class="none">No features recorded yet.</span>';
+  menu.querySelectorAll("input").forEach(cb=>cb.addEventListener("change",()=>{
+    if(cb.checked) catFilter.features.add(cb.value); else catFilter.features.delete(cb.value);
+    renderCatalog();
+  }));
+  const n=catFilter.features.size;
+  $("f-ft-btn").textContent = n ? n+" feature"+(n===1?"":"s")+" selected" : "All features";
+  $("f-ft-btn").classList.toggle("on", n>0);
+}
+/* Models matching what has been typed, so the list narrows as you type. */
+function renderModelMenu(){
+  const q=$("f-model-in").value.trim().toLowerCase();
+  const menu=$("f-model-menu");
+  const models=state.devices.map(d=>d.model).filter(Boolean)
+    .filter(m=>!q || m.toLowerCase().includes(q))
+    .sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
+  menu.innerHTML = models.length
+    ? models.map(m=>`<label><input type="checkbox" value="${esc(m)}" ${catFilter.models.has(m)?"checked":""}><span>${esc(m)}</span></label>`).join("")
+    : '<span class="none">No models match.</span>';
+  menu.querySelectorAll("input").forEach(cb=>cb.addEventListener("change",()=>{
+    if(cb.checked) catFilter.models.add(cb.value); else catFilter.models.delete(cb.value);
+    renderCatalog();
+    renderModelMenu();      // keep the open list in step with the chips
+  }));
+}
+function renderModelChips(){
+  const wrap=$("f-model-chips");
+  wrap.innerHTML=[...catFilter.models].sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}))
+    .map(m=>`<span class="chip">${esc(m)}<button type="button" data-unpick="${esc(m)}" title="Remove ${esc(m)}" aria-label="Remove ${esc(m)}">×</button></span>`).join("");
+  wrap.querySelectorAll("[data-unpick]").forEach(b=>b.addEventListener("click",()=>{
+    catFilter.models.delete(b.dataset.unpick);
+    renderCatalog();
+    if($("f-model-menu").classList.contains("open")) renderModelMenu();
+  }));
 }
 function deviceAccessories(devId){
   return state.accessories.filter(a=>(a.deviceIds||[]).includes(devId))
@@ -1809,6 +1911,7 @@ function deviceAccessories(devId){
 function renderCatalog(){
   fillFilterOptions();
   const t=$("f-type").value, u=$("f-uc").value, lcF=$("f-lc").value, q=$("f-q").value.trim().toLowerCase();
+  const portF=$("f-ports").value;
   const list = state.devices.filter(d=>{
     if (t && d.type!==t) return false;
     if (u && !(d.useCases||[]).includes(u)) return false;
@@ -1816,6 +1919,10 @@ function renderCatalog(){
     if (lcF==="eos" && !(d.lifecycle && d.lifecycle.status==="eos")) return false;
     if (lcF==="eol" && !(d.lifecycle && d.lifecycle.status==="eol")) return false;
     if (lcF==="eosup" && !d.endOfSupport) return false;
+    if (portF && Number(d.ports)!==Number(portF)) return false;
+    // features are ANDed: the device must have every feature ticked
+    if (catFilter.features.size && ![...catFilter.features].every(f=>(d.features||[]).includes(f))) return false;
+    if (catFilter.models.size && !catFilter.models.has(d.model)) return false;
     if (q) {
       const accs = deviceAccessories(d.id).map(a=>a.name+" "+(a.partNumber||"")).join(" ");
       const lnks = deviceLinks(d.id).map(l=>l.title+" "+(l.url||"")).join(" ");
@@ -1960,9 +2067,36 @@ function renderCatalog(){
   $("catalog-empty").style.display = list.length ? "none" : "";
   grid.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>editDevice(b.dataset.edit)));
 }
-["f-type","f-uc","f-lc"].forEach(id=>$(id).addEventListener("change",renderCatalog));
+["f-type","f-uc","f-lc","f-ports"].forEach(id=>$(id).addEventListener("change",renderCatalog));
+/* Features dropdown */
+$("f-ft-btn").addEventListener("click",e=>{
+  e.stopPropagation();
+  const m=$("f-ft-menu"), open=m.classList.toggle("open");
+  $("f-model-menu").classList.remove("open");
+  $("f-ft-btn").setAttribute("aria-expanded", open?"true":"false");
+});
+/* Model picker: typing narrows the list, ticking selects, chips show the picks */
+$("f-model-in").addEventListener("focus",()=>{
+  $("f-ft-menu").classList.remove("open");
+  renderModelMenu(); $("f-model-menu").classList.add("open");
+});
+$("f-model-in").addEventListener("input",()=>{
+  renderModelMenu(); $("f-model-menu").classList.add("open");
+});
+$("f-model-in").addEventListener("click",e=>e.stopPropagation());
+$("f-model-in").addEventListener("keydown",e=>{ if(e.key==="Escape"){ $("f-model-menu").classList.remove("open"); e.target.blur(); } });
+document.addEventListener("click",e=>{
+  if(!$("f-ft-wrap").contains(e.target)){ $("f-ft-menu").classList.remove("open"); $("f-ft-btn").setAttribute("aria-expanded","false"); }
+  if(!$("f-model-wrap").contains(e.target)) $("f-model-menu").classList.remove("open");
+});
 $("f-q").addEventListener("input",renderCatalog);
-$("f-clear").addEventListener("click",()=>{ $("f-type").value=""; $("f-uc").value=""; $("f-lc").value=""; $("f-q").value=""; renderCatalog(); });
+$("f-clear").addEventListener("click",()=>{
+  $("f-type").value=""; $("f-uc").value=""; $("f-lc").value=""; $("f-q").value="";
+  $("f-ports").value=""; $("f-model-in").value="";
+  catFilter.features.clear(); catFilter.models.clear();
+  $("f-ft-menu").classList.remove("open"); $("f-model-menu").classList.remove("open");
+  renderCatalog();
+});
 function setCatalogView(v){
   catalogView = v;
   const exp = v==="expanded";
