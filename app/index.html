@@ -3543,22 +3543,59 @@ $("bom-save").addEventListener("click",saveBomDetails);
 /* A new BOM is in state the moment it is created, and adding a line persists it,
    so leaving without saving the details would strand it in the list as
    "Untitled". Ask on the way out, and discard it if they decline. */
+/* Do the detail fields differ from what is stored? The record is only written on
+   save, so discarding an existing BOM's edits just means walking away. */
+function bomDetailsDirty(){
+  const b=state.boms.find(x=>x.id===state.editingBomId);
+  if(!b) return false;
+  const same=$("bom-inv-same").checked;
+  const invoice = same ? ($("bom-delivery").value||"") : ($("bom-invoice").value||"");
+  return $("bom-title").value.trim()!==(b.title||"")
+      || $("bom-by").value.trim()!==(b.createdBy||"")
+      || $("bom-notes").value.trim()!==(b.notes||"")
+      || ($("bom-delivery").value||"")!==(b.deliverySiteId||"")
+      || same!==(b.invoiceSameAsDelivery!==false)
+      || invoice!==(b.invoiceSiteId||"");
+}
+/* A new BOM is in state the moment it is created, and adding a line persists it,
+   so leaving without saving would strand it in the list as "Untitled". An
+   existing BOM keeps its stored version, so there the question is only whether
+   to keep the edits. Ask on the way out either way. */
 function guardUnsavedBom(next){
   if(next==="bom-edit") return true;
   const cur=document.querySelector(".view.active");
-  if(!cur || cur.id!=="view-bom-edit" || !state._bomIsNew) return true;
+  if(!cur || cur.id!=="view-bom-edit") return true;
   const b=state.boms.find(x=>x.id===state.editingBomId);
   if(!b) return true;
-  const title=$("bom-title").value.trim();
-  if(!confirm("This bill of materials has not been saved yet.\n\n"
-      + "OK - save it" + (title?' as "'+title+'"':"") + " and carry on.\n"
-      + "Cancel - discard it. Any items added to it are lost.")){
-    state.boms=state.boms.filter(x=>x.id!==b.id);
-    state.editingBomId=null; state._bomIsNew=false;
-    store.deleteBom(b).catch(()=>{});
-    renderBomList();
-    toast("Unsaved bill of materials discarded.");
-    return true;
+
+  if(state._bomIsNew){
+    // nothing typed and nothing added - drop it without troubling anyone
+    if(!bomDetailsDirty() && !(b.lines||[]).length){
+      state.boms=state.boms.filter(x=>x.id!==b.id);
+      state.editingBomId=null; state._bomIsNew=false;
+      store.deleteBom(b).catch(()=>{});
+      renderBomList();
+      return true;
+    }
+    const title=$("bom-title").value.trim();
+    if(!confirm("This bill of materials has not been saved yet.\n\n"
+        + "OK - save it" + (title?' as "'+title+'"':"") + " and carry on.\n"
+        + "Cancel - discard it. Any items added to it are lost.")){
+      state.boms=state.boms.filter(x=>x.id!==b.id);
+      state.editingBomId=null; state._bomIsNew=false;
+      store.deleteBom(b).catch(()=>{});
+      renderBomList();
+      toast("Unsaved bill of materials discarded.");
+      return true;
+    }
+  } else {
+    if(!bomDetailsDirty()) return true;
+    if(!confirm('"' + (b.title||"This bill of materials") + '" has unsaved changes to its details.\n\n'
+        + "OK - save them.\n"
+        + "Cancel - discard them and keep the version already saved.")){
+      toast("Changes discarded.");
+      return true;   // the record was never written to, so there is nothing to undo
+    }
   }
   if(!bomDetailsValid()) return false;   // stay put so the missing field can be filled
   saveBomDetails();
