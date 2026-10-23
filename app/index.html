@@ -3733,6 +3733,7 @@ function renderBomLines(){
   b.lines=coalesceBomLines(b);
   if(b.lines.length!==before){ store.saveBom(b).catch(()=>{}); }
   if(!b.lines.length){ host.innerHTML=""; $("bom-lines-empty").style.display=""; return; }
+  $("bom-lines-empty").style.display="none";   // there are lines now - stop inviting the first one
   // group device lines by device type; accessory lines by accessory category
   const devLines=b.lines.filter(l=>l.kind==="device");
   const accLines=b.lines.filter(l=>l.kind==="accessory");
