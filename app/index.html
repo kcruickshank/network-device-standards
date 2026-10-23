@@ -1158,6 +1158,8 @@
       <div class="sub2" style="font-size:13px;color:var(--muted);margin-bottom:12px">Choose an accessory type, then tick the accessories to add and set quantities. No device will be added — only the accessories you pick.</div>
       <div class="filterbar" style="margin-bottom:12px">
         <div class="field"><label for="bm-acccat">Accessory type</label><select id="bm-acccat"></select></div>
+        <div class="field"><label for="bm-accdtype">Device type</label><select id="bm-accdtype"></select></div>
+        <div class="field"><label for="bm-accdmodel">Device model</label><select id="bm-accdmodel"></select></div>
         <div class="field grow"><label for="bm-accq">Search</label><input id="bm-accq" type="search" placeholder="Accessory, part number…"></div>
       </div>
       <div id="bm-accpicklist"></div>
@@ -1653,6 +1655,7 @@ function typeColorDefault(t){ return (state.meta.typeColorDefaults && state.meta
 function typeColor(t){ return (state.meta.typeColors && state.meta.typeColors[t]) || typeColorDefault(t); }
 
 function switchView(name){
+  if(!guardUnsavedBom(name)) return;
   document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
   $("view-"+name).classList.add("active");
   document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("active", b.dataset.view===name));
@@ -3509,12 +3512,18 @@ function openBomEditor(b){
 $("bom-delivery").addEventListener("change",()=>{ if($("bom-inv-same").checked) $("bom-invoice").value=$("bom-delivery").value; });
 $("bom-inv-same").addEventListener("change",syncInvoiceUI);
 $("bom-back").addEventListener("click",e=>{ e.preventDefault(); switchView("boms"); });
-$("bom-save").addEventListener("click",async ()=>{
+/* The details the Save button insists on, checked separately so the
+   leaving-the-page prompt can use the same rules. */
+function bomDetailsValid(){
+  if(!$("bom-title").value.trim()){ toast("A title is required."); $("bom-title").focus(); return false; }
+  if(!$("bom-by").value.trim()){ toast("Enter who created this BOM."); $("bom-by").focus(); return false; }
+  return true;
+}
+async function saveBomDetails(){
   const b=state.boms.find(x=>x.id===state.editingBomId); if(!b) return;
+  if(!bomDetailsValid()) return;
   const title=$("bom-title").value.trim();
-  if(!title){ toast("A title is required."); $("bom-title").focus(); return; }
   const by=$("bom-by").value.trim();
-  if(!by){ toast("Enter who created this BOM."); $("bom-by").focus(); return; }
   const wasNew=state._bomIsNew;
   b.title=title; b.createdBy=by; b.notes=$("bom-notes").value.trim();
   b.deliverySiteId=$("bom-delivery").value||"";
@@ -3529,7 +3538,32 @@ $("bom-save").addEventListener("click",async ()=>{
     toast("Saved.");
   } catch(e){ reportSaveError(e,"Save failed"); }
   busy(false);
-}); 
+}
+$("bom-save").addEventListener("click",saveBomDetails);
+/* A new BOM is in state the moment it is created, and adding a line persists it,
+   so leaving without saving the details would strand it in the list as
+   "Untitled". Ask on the way out, and discard it if they decline. */
+function guardUnsavedBom(next){
+  if(next==="bom-edit") return true;
+  const cur=document.querySelector(".view.active");
+  if(!cur || cur.id!=="view-bom-edit" || !state._bomIsNew) return true;
+  const b=state.boms.find(x=>x.id===state.editingBomId);
+  if(!b) return true;
+  const title=$("bom-title").value.trim();
+  if(!confirm("This bill of materials has not been saved yet.\n\n"
+      + "OK - save it" + (title?' as "'+title+'"':"") + " and carry on.\n"
+      + "Cancel - discard it. Any items added to it are lost.")){
+    state.boms=state.boms.filter(x=>x.id!==b.id);
+    state.editingBomId=null; state._bomIsNew=false;
+    store.deleteBom(b).catch(()=>{});
+    renderBomList();
+    toast("Unsaved bill of materials discarded.");
+    return true;
+  }
+  if(!bomDetailsValid()) return false;   // stay put so the missing field can be filled
+  saveBomDetails();
+  return true;
+}
 async function deleteBom(id){
   const b=state.boms.find(x=>x.id===id); if(!b) return;
   if(!await requireAdmin()) return; if(!confirm('Delete bill of materials "' + (b.title||"Untitled") + '"? This cannot be undone.')) return;
@@ -3749,32 +3783,61 @@ function openAddAccessoryModal(){
   $("bom-stage-accpick").style.display=""; $("bom-stage-device").style.display="none"; $("bom-stage-acc").style.display="none";
   $("bom-modal-h").textContent="Add accessory to BOM";
   bmAccSel=new Map();
-  $("bm-accq").value="";
-  fillBomAccCatOptions();
+  $("bm-accq").value=""; $("bm-acccat").value=""; $("bm-accdtype").value=""; $("bm-accdmodel").value="";
   renderAccPickList();
   $("bom-modal").classList.add("open");
 }
 /* Accessories chosen in this dialog, kept across filter changes so narrowing the
    list does not quietly drop something already ticked. id -> quantity. */
 let bmAccSel=new Map();
-function fillBomAccCatOptions(){
-  const sel=$("bm-acccat"), keep=sel.value;
-  const cats=[...new Set(state.accessories.map(a=>a.category).filter(Boolean))]
-    .sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
-  const hasUncat=state.accessories.some(a=>!a.category);
-  sel.innerHTML='<option value="">All accessory types</option>'
-    + cats.map(c=>`<option>${esc(c)}</option>`).join("")
-    + (hasUncat?'<option value="~none">Uncategorised</option>':"");
-  sel.value=[...sel.options].some(o=>o.value===keep)?keep:"";
-}
-function renderAccPickList(){
-  const c=$("bm-acccat").value, q=$("bm-accq").value.trim().toLowerCase();
-  const list=state.accessories.filter(a=>{
+/* Does an accessory pass the picker's filters, optionally ignoring one of them?
+   Each filter's own options are built ignoring itself, as on the catalog. */
+function accPickMatches(a, except){
+  const c=$("bm-acccat").value, dt=$("bm-accdtype").value, dm=$("bm-accdmodel").value;
+  const q=$("bm-accq").value.trim().toLowerCase();
+  const devs=()=>(a.deviceIds||[]).map(id=>state.devices.find(x=>x.id===id)).filter(Boolean);
+  if(except!=="cat"){
     if(c==="~none"){ if(a.category) return false; }
     else if(c && (a.category||"")!==c) return false;
-    if(q){ const hay=[a.name,a.partNumber||"",a.category||""].join(" ").toLowerCase(); if(!hay.includes(q)) return false; }
-    return true;
-  }).sort((a,b)=>(a.category||"").localeCompare(b.category||"")||a.name.localeCompare(b.name));
+  }
+  if(except!=="dtype" && dt && !devs().some(d=>(d.type||"")===dt)) return false;
+  if(except!=="dmodel" && dm && !(a.deviceIds||[]).includes(dm)) return false;
+  if(q){
+    const hay=[a.name,a.partNumber||"",a.category||"",devs().map(d=>d.model+" "+(d.type||"")).join(" ")]
+      .join(" ").toLowerCase();
+    if(!hay.includes(q)) return false;
+  }
+  return true;
+}
+function fillBomAccFilters(){
+  const byName=(a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"});
+  // accessory type
+  const cs=$("bm-acccat"), keepC=cs.value;
+  const pool=state.accessories.filter(a=>accPickMatches(a,"cat"));
+  const cats=[...new Set(pool.map(a=>a.category).filter(Boolean))].sort(byName);
+  cs.innerHTML='<option value="">All accessory types</option>'
+    + cats.map(c=>`<option>${esc(c)}</option>`).join("")
+    + (pool.some(a=>!a.category)?'<option value="~none">Uncategorised</option>':"");
+  cs.value=[...cs.options].some(o=>o.value===keepC)?keepC:"";
+  // device type - only types whose devices actually carry a reachable accessory
+  const ts=$("bm-accdtype"), keepT=ts.value;
+  const linked=accs=>accs.flatMap(a=>(a.deviceIds||[]).map(id=>state.devices.find(x=>x.id===id))).filter(Boolean);
+  const types=[...new Set(linked(state.accessories.filter(a=>accPickMatches(a,"dtype"))).map(d=>d.type).filter(Boolean))].sort(byName);
+  ts.innerHTML='<option value="">All device types</option>'+types.map(t=>`<option>${esc(t)}</option>`).join("");
+  ts.value=types.includes(keepT)?keepT:"";
+  // device model - scoped to the chosen device type
+  const ms=$("bm-accdmodel"), keepM=ms.value;
+  const models=[...new Map(linked(state.accessories.filter(a=>accPickMatches(a,"dmodel")))
+    .filter(d=>!ts.value || (d.type||"")===ts.value).map(d=>[d.id,d])).values()]
+    .sort((a,b)=>byName(a.model,b.model));
+  ms.innerHTML='<option value="">All device models</option>'
+    + models.map(d=>`<option value="${esc(d.id)}">${esc(d.model)}${ts.value?"":` · ${esc(d.type||"")}`}</option>`).join("");
+  ms.value=models.some(d=>d.id===keepM)?keepM:"";
+}
+function renderAccPickList(){
+  fillBomAccFilters();
+  const list=state.accessories.filter(a=>accPickMatches(a,null))
+    .sort((a,b)=>(a.category||"").localeCompare(b.category||"")||a.name.localeCompare(b.name));
   $("bm-accpicklist").innerHTML = list.length ? list.map(a=>{
     const on=bmAccSel.has(a.id), qty=bmAccSel.get(a.id)||1;
     return `<div class="acc-pick">
@@ -3804,7 +3867,7 @@ function updateAccSelNote(){
       + (hiddenPicked ? " (" + hiddenPicked + " not shown under the current filter)" : "")
     : "Nothing selected yet.";
 }
-$("bm-acccat").addEventListener("change",renderAccPickList);
+["bm-acccat","bm-accdtype","bm-accdmodel"].forEach(id=>$(id).addEventListener("change",renderAccPickList));
 $("bm-accq").addEventListener("input",renderAccPickList);
 $("bm-acccancel").addEventListener("click",closeAddItemModal);
 function closeAddItemModal(){ $("bom-modal").classList.remove("open"); }
